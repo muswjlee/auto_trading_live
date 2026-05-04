@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+trading.log
+positions.json
+daily_pnl.json
+.token_cache.json

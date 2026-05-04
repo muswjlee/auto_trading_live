@@ -1,0 +1,27 @@
+{
+  "id": "research_morning",
+  "name": "리서치 보고서 급등 전략",
+  "enabled": false,
+  "schedule": {
+    "entry_time": "09:15",
+    "monitor_interval_sec": 30
+  },
+  "universe": {
+    "type": "research",
+    "max_pages": 3,
+    "min_price": 1000,
+    "max_price": 200000
+  },
+  "entry": {
+    "min_change_rate": 5.0,
+    "max_change_rate": 10.0,
+    "sort_by": "execution_strength",
+    "max_stocks": 3,
+    "amount_per_stock": 300000,
+    "order_type": "market"
+  },
+  "exit": {
+    "take_profit": 2.0,
+    "stop_loss": -2.0
+  }
+}
