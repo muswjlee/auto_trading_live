@@ -6,3 +6,4 @@ trading.log
 positions.json
 daily_pnl.json
 .token_cache.json
+launcher.log
