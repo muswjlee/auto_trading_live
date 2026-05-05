@@ -153,10 +153,35 @@ def send_strategy_summary(strategy: dict, today: str, log):
 
 # ── 메인 루프 ──────────────────────────────────────────────────────────────
 
+def _is_trading_day(d=None) -> bool:
+    import holidays as _holidays
+    from datetime import date as _date
+    if d is None:
+        d = _date.today()
+    if hasattr(d, "date"):
+        d = d.date()
+    if d.weekday() >= 5:
+        return False
+    FIXED_HOLIDAYS = {(1, 1), (3, 1), (5, 1), (5, 5), (6, 6), (8, 15), (10, 3), (10, 9), (12, 25)}
+    if (d.month, d.day) in FIXED_HOLIDAYS:
+        return False
+    try:
+        kr = _holidays.KR(years=d.year)
+        return d not in kr
+    except Exception:
+        return False
+
+
 def run(strategy_id: str):
     strategy = load_strategy(strategy_id)
     log      = _setup_logger(strategy_id)
     sid      = strategy["id"]
+
+    if not _is_trading_day():
+        log.info(f"[{sid}] 오늘은 휴장일 — 실행 종료")
+        from engine.notifier import send
+        send(f"📵 [{sid}] 오늘은 휴장일입니다.")
+        return
 
     h, m     = map(int, strategy["schedule"]["entry_time"].split(":"))
     entry_t  = h * 100 + m
