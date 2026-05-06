@@ -184,6 +184,21 @@ class TickScalper:
             self._enter(info)
 
 
+# 거래대금 상위 ETF 하드코딩 fallback (API 실패 시 사용)
+_FALLBACK_ETFS = [
+    ("069500", "KODEX 200"),
+    ("102110", "TIGER 200"),
+    ("114800", "KODEX 인버스"),
+    ("122630", "KODEX 레버리지"),
+    ("233740", "KODEX 코스닥150레버리지"),
+    ("251340", "KODEX 코스닥150"),
+    ("091160", "KODEX 반도체"),
+    ("091230", "TIGER 반도체"),
+    ("102970", "KODEX 증권"),
+    ("157500", "TIGER 증권"),
+]
+
+
 # ── ETF 유니버스 ─────────────────────────────────────────────────────────────
 
 def _get_etf_universe(api: KISApi, cfg: dict) -> list[dict]:
@@ -242,6 +257,18 @@ def _get_etf_universe(api: KISApi, cfg: dict) -> list[dict]:
 
     etfs.sort(key=lambda x: x["tr_val"], reverse=True)
     result = etfs[:top_n]
+
+    # API로 top_n 미달 시 fallback 종목으로 보충
+    if len(result) < top_n:
+        existing_codes = {e["code"] for e in result}
+        for code, name in _FALLBACK_ETFS:
+            if len(result) >= top_n:
+                break
+            if code not in existing_codes:
+                result.append({"code": code, "name": name, "price": 0, "tr_val": 0})
+                existing_codes.add(code)
+        log.info(f"ETF 유니버스 fallback 보충 → 총 {len(result)}개")
+
     log.info(f"ETF 유니버스 {len(result)}개: {[e['name'] for e in result]}")
     return result
 
