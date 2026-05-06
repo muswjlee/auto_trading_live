@@ -1,0 +1,31 @@
+{
+  "id": "tick_momentum_etf",
+  "name": "5틱 모멘텀 스캘핑",
+  "type": "tick",
+  "enabled": true,
+  "schedule": {
+    "start_time": "09:10",
+    "end_time": "15:10",
+    "poll_interval_sec": 1
+  },
+  "universe": {
+    "top_n": 10,
+    "min_price": 5000,
+    "max_price": 200000
+  },
+  "entry": {
+    "consecutive_up_ticks": 5,
+    "max_spread_ticks": 2,
+    "amount_per_stock": 1000000
+  },
+  "exit": {
+    "take_profit_ticks": 2,
+    "stop_loss_ticks": 1,
+    "time_limit_sec": 10
+  },
+  "risk": {
+    "reentry_cooldown_sec": 30,
+    "max_consecutive_losses": 3,
+    "max_daily_loss_pct": -1.0
+  }
+}

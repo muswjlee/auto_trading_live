@@ -121,15 +121,19 @@ def main():
         f"활성 전략 {len(strategies)}개:\n{names}"
     )
 
-    # 전략별 프로세스 실행
-    runner = os.path.join(_BASE, "engine", "runner.py")
+    # 전략별 프로세스 실행 (type에 따라 runner 분기)
+    runner_map = {
+        "tick": os.path.join(_BASE, "engine", "tick_runner.py"),
+    }
+    default_runner = os.path.join(_BASE, "engine", "runner.py")
     for s in strategies:
+        runner = runner_map.get(s.get("type"), default_runner)
         proc = subprocess.Popen(
             [sys.executable, runner, s["id"]],
             cwd=_BASE,
         )
         _children.append(proc)
-        log.info(f"  [{s['id']}] PID={proc.pid} 시작")
+        log.info(f"  [{s['id']}] PID={proc.pid} 시작 (runner={os.path.basename(runner)})")
 
     # 모든 전략 프로세스 종료 대기
     for proc in _children:
