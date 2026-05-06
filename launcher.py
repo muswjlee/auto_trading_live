@@ -112,7 +112,7 @@ def main():
 
     # 시작 메시지
     names = "\n".join(
-        f"  • {s['name']} ({s['schedule']['entry_time']})"
+        f"  • {s['name']} ({s['schedule'].get('entry_time', s['schedule'].get('start_time', ''))})"
         for s in strategies
     )
     log.info(f"자동매매 시작 | {len(strategies)}개 전략")
