@@ -68,13 +68,13 @@ class TickScalper:
             losses = self.state["consecutive_losses"]
             if losses >= self.cfg["risk"]["max_consecutive_losses"]:
                 self.state["halted"] = True
-                send(f"[틱스캘핑] 연속 손실 {losses}회 — 오늘 거래 중단")
+                send(f"[{self.cfg['name']}] 연속 손실 {losses}회 — 오늘 거래 중단")
                 return
 
             max_loss = self.cfg["risk"]["max_daily_loss_pct"] / 100 * self.state["capital"]
             if self.state["daily_pnl"] <= max_loss:
                 self.state["halted"] = True
-                send(f"[틱스캘핑] 일손실 {self.state['daily_pnl']:,}원 한도 초과 — 오늘 거래 중단")
+                send(f"[{self.cfg['name']}] 일손실 {self.state['daily_pnl']:,}원 한도 초과 — 오늘 거래 중단")
 
     # ── 진입 ─────────────────────────────────────────────────────────────────
 
@@ -136,7 +136,7 @@ class TickScalper:
                 "order_no":    result.get("odno", ""),
             }
             log.info(f"[매수] {self.name}({self.code}) {qty}주 @{ask:,} TP={tp:,} SL={sl:,}")
-            send(f"[틱스캘핑] 매수 {self.name} {qty}주 @{ask:,}원")
+            send(f"[{self.cfg['name']}] 매수 {self.name} {qty}주 @{ask:,}원")
         except Exception as e:
             log.warning(f"[매수 실패] {self.name}: {e}")
 
@@ -162,7 +162,7 @@ class TickScalper:
             self.api.sell(self.code, pos["qty"])
             pnl = (current_price - pos["entry_price"]) * pos["qty"]
             log.info(f"[매도] {self.name}({self.code}) {reason} @{current_price:,} 손익={pnl:+,}원")
-            send(f"[틱스캘핑] {reason} {self.name} @{current_price:,}원 ({pnl:+,}원)")
+            send(f"[{self.cfg['name']}] {reason} {self.name} @{current_price:,}원 ({pnl:+,}원)")
             self._record_trade(pnl)
         except Exception as e:
             log.error(f"[매도 실패] {self.name}: {e}")
@@ -326,7 +326,7 @@ def run(strategy_id: str):
         return
 
     scalpers = [TickScalper(e["code"], e["name"], cfg, api, state, lock) for e in etf_list]
-    send(f"[틱스캘핑] 시작 — {len(scalpers)}개 ETF 모니터링 중")
+    send(f"[{cfg['name']}] 시작 — {len(scalpers)}개 ETF 모니터링 중")
 
     while True:
         now = datetime.now()

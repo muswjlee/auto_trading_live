@@ -51,7 +51,7 @@ def execute_entry(api: KISApi, strategy: dict, log):
     selected = screen(api, strategy)
     if not selected:
         log.info("매수 대상 종목 없음")
-        notify_no_signal()
+        notify_no_signal(strategy["name"])
         return
 
     amount = strategy["entry"]["amount_per_stock"]
@@ -74,7 +74,7 @@ def execute_entry(api: KISApi, strategy: dict, log):
                 try:
                     result = api.buy(code, qty, price=0)
                     log.info(f"[매수] {name}({code}) {qty}주  주문번호={result.get('odno')}")
-                    notify_buy(name, code, qty, price)
+                    notify_buy(name, code, qty, price, strategy["name"])
                     add_position(code, name, price, qty, strategy["id"])
                     break
                 except Exception as e:
@@ -109,7 +109,7 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
             price_info = api.get_price(code)
             current    = int(price_info["stck_prpr"])
             api.sell(code, pos["qty"])
-            notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도")
+            notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", strategy["name"])
             record_trade(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", sid)
             remove_position(pos_key)
             log.info(f"[장마감 강제매도] {pos['name']}({code}) 완료")

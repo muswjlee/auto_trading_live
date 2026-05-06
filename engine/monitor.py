@@ -148,14 +148,14 @@ def check_and_exit(api: KISApi, strategies: list):
             if pnl_pct >= take_profit:
                 log.info(f"[익절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
                 api.sell(code, pos["qty"])
-                notify_sell(pos["name"], code, pos["qty"], buy_price, current, "익절")
+                notify_sell(pos["name"], code, pos["qty"], buy_price, current, "익절", sid)
                 record_trade(pos["name"], code, pos["qty"], buy_price, current, "익절", sid)
                 remove_position(pos_key)
 
             elif pnl_pct <= stop_loss:
                 log.info(f"[손절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
                 api.sell(code, pos["qty"])
-                notify_sell(pos["name"], code, pos["qty"], buy_price, current, "손절")
+                notify_sell(pos["name"], code, pos["qty"], buy_price, current, "손절", sid)
                 record_trade(pos["name"], code, pos["qty"], buy_price, current, "손절", sid)
                 remove_position(pos_key)
 
