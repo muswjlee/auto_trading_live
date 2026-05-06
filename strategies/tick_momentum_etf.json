@@ -16,7 +16,7 @@
   "entry": {
     "consecutive_up_ticks": 5,
     "max_spread_ticks": 2,
-    "amount_per_stock": 1000000
+    "amount_per_stock": 300000
   },
   "exit": {
     "take_profit_ticks": 2,
