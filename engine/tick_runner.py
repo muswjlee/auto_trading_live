@@ -189,7 +189,16 @@ def _get_etf_universe(api: KISApi, cfg: dict) -> list[dict]:
     min_price = cfg["universe"].get("min_price", 0)
     max_price = cfg["universe"].get("max_price", 0)
 
-    raw = api._fetch_volume_rank_page("4", min_price, max_price, 0)
+    # 코스피(1) 조회 후 ETF 이름으로 필터링 (500 에러 시 최대 3회 재시도)
+    raw = []
+    for attempt in range(3):
+        try:
+            raw = api._fetch_volume_rank_page("1", min_price, max_price, 0)
+            break
+        except Exception as e:
+            log.warning(f"ETF 유니버스 조회 실패 ({attempt+1}/3): {e}")
+            if attempt < 2:
+                time.sleep(2)
 
     etfs = []
     for item in raw:
