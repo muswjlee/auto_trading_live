@@ -1,0 +1,30 @@
+2026-05-06 09:06:49,394 [INFO] [vol_surge_vol30_0910] 프로세스 시작 | 진입: 09:10
+2026-05-06 09:10:19,541 [INFO] === [vol_surge_vol30_0910] 매수 실행 ===
+2026-05-06 09:10:19,562 [INFO] 거래량 상위 종목 조회 중...
+2026-05-06 09:10:20,745 [ERROR] [vol_surge_vol30_0910] 치명적 오류:
+Traceback (most recent call last):
+  File "C:\Users\wjlee\OneDrive - MUS\MUS-WJLEE\MUS Advisory\auto_trading\engine\runner.py", line 244, in <module>
+    run(sid)
+    ~~~^^^^^
+  File "C:\Users\wjlee\OneDrive - MUS\MUS-WJLEE\MUS Advisory\auto_trading\engine\runner.py", line 228, in run
+    execute_entry(api, strategy, log)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\wjlee\OneDrive - MUS\MUS-WJLEE\MUS Advisory\auto_trading\engine\runner.py", line 51, in execute_entry
+    selected = screen(api, strategy)
+  File "C:\Users\wjlee\OneDrive - MUS\MUS-WJLEE\MUS Advisory\auto_trading\engine\screener.py", line 117, in screen
+    candidates = _build_volume_candidates(api, univ, entry)
+  File "C:\Users\wjlee\OneDrive - MUS\MUS-WJLEE\MUS Advisory\auto_trading\engine\screener.py", line 41, in _build_volume_candidates
+    volume_stocks = api.get_volume_rank(
+        top_n=univ["top_volume"],
+    ...<2 lines>...
+        max_price=univ["max_price"],
+    )
+  File "C:\Users\wjlee\OneDrive - MUS\MUS-WJLEE\MUS Advisory\auto_trading\kis_api.py", line 132, in get_volume_rank
+    page = self._fetch_volume_rank_page(mkt, min_price, max_price, min_volume)
+  File "C:\Users\wjlee\OneDrive - MUS\MUS-WJLEE\MUS Advisory\auto_trading\kis_api.py", line 107, in _fetch_volume_rank_page
+    res.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\wjlee\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\models.py", line 1028, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/volume-rank?FID_COND_MRKT_DIV_CODE=J&FID_COND_SCR_DIV_CODE=20171&FID_INPUT_ISCD=0000&FID_DIV_CLS_CODE=0&FID_BLNG_CLS_CODE=1&FID_TRGT_CLS_CODE=111111111&FID_TRGT_EXLS_CLS_CODE=000000&FID_INPUT_PRICE_1=1000&FID_INPUT_PRICE_2=200000&FID_VOL_CNT=0&FID_INPUT_DATE_1=
+
