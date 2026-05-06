@@ -8,6 +8,8 @@ import logging
 import traceback
 from datetime import datetime
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from kis_api import KISApi
 from engine.screener import screen
 from engine.monitor import (
