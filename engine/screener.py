@@ -140,7 +140,17 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
                 acml_vol = int(price_info.get("acml_vol", 0))
                 prdy_vol = int(price_info.get("prdy_vol", 0))
                 if prdy_vol <= 0:
-                    log.info(f"  {s['name']} 전일거래량 없음 → 제외")
+                    # 전일이 휴장인 경우 → OHLCV에서 가장 최근 개장일 거래량 사용
+                    try:
+                        ohlcv = api.get_ohlcv(s["code"], count=5)
+                        prdy_vol = next(
+                            (int(o.get("acml_vol", 0)) for o in ohlcv if int(o.get("acml_vol", 0)) > 0),
+                            0,
+                        )
+                    except Exception:
+                        prdy_vol = 0
+                if prdy_vol <= 0:
+                    log.info(f"  {s['name']} 최근 거래량 없음 → 제외")
                     continue
                 vol_ratio = acml_vol / prdy_vol
                 if vol_ratio < min_volume_ratio:
