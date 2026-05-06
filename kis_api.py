@@ -129,8 +129,12 @@ class KISApi:
         seen_codes = set()
         raw_all = []
         for mkt in markets:
-            page = self._fetch_volume_rank_page(mkt, min_price, max_price, min_volume)
-            time.sleep(0.2)  # API 호출 간격
+            try:
+                page = self._fetch_volume_rank_page(mkt, min_price, max_price, min_volume)
+            except Exception:
+                time.sleep(0.2)
+                continue
+            time.sleep(0.2)
             for item in page:
                 code = item.get("mksc_shrn_iscd", "")
                 if code and code not in seen_codes:
