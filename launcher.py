@@ -50,7 +50,7 @@ def load_enabled_strategies() -> list[dict]:
             s = json.load(f)
         if s.get("enabled", False):
             result.append(s)
-    result.sort(key=lambda s: s["schedule"]["entry_time"])
+    result.sort(key=lambda s: s["schedule"].get("entry_time", s["schedule"].get("start_time", "")))
     return result
 
 
