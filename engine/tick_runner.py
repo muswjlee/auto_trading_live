@@ -7,12 +7,14 @@ import time
 import logging
 import threading
 import traceback
+import requests
 from datetime import datetime, timedelta
 from collections import deque
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kis_api import KISApi
+from config import BASE_URL
 from engine.notifier import send, notify_error
 from engine.screener import is_etf
 from engine.runner import _is_trading_day
@@ -189,16 +191,37 @@ def _get_etf_universe(api: KISApi, cfg: dict) -> list[dict]:
     min_price = cfg["universe"].get("min_price", 0)
     max_price = cfg["universe"].get("max_price", 0)
 
-    # 코스피(1) 조회 후 ETF 이름으로 필터링 (500 에러 시 최대 3회 재시도)
+    # 코스피(1) + 코스닥(2) 거래대금 기준 조회 후 ETF 필터링
+    # FID_DIV_CLS_CODE=1 → 거래대금 기준 정렬 (거래량 기준보다 ETF 더 많이 포함)
     raw = []
-    for attempt in range(3):
-        try:
-            raw = api._fetch_volume_rank_page("1", min_price, max_price, 0)
-            break
-        except Exception as e:
-            log.warning(f"ETF 유니버스 조회 실패 ({attempt+1}/3): {e}")
-            if attempt < 2:
-                time.sleep(2)
+    for market in ("1", "2"):
+        for attempt in range(3):
+            try:
+                res = requests.get(
+                    f"{BASE_URL}/uapi/domestic-stock/v1/quotations/volume-rank",
+                    headers=api._headers("FHPST01710000"),
+                    params={
+                        "FID_COND_MRKT_DIV_CODE": "J",
+                        "FID_COND_SCR_DIV_CODE":  "20171",
+                        "FID_INPUT_ISCD":         "0000",
+                        "FID_DIV_CLS_CODE":       "1",   # 거래대금 기준
+                        "FID_BLNG_CLS_CODE":      market,
+                        "FID_TRGT_CLS_CODE":      "111111111",
+                        "FID_TRGT_EXLS_CLS_CODE": "000000",
+                        "FID_INPUT_PRICE_1":      str(min_price),
+                        "FID_INPUT_PRICE_2":      str(max_price),
+                        "FID_VOL_CNT":            "0",
+                        "FID_INPUT_DATE_1":       "",
+                    },
+                )
+                res.raise_for_status()
+                raw.extend(res.json().get("output", []))
+                break
+            except Exception as e:
+                log.warning(f"ETF 유니버스 조회 실패 (market={market}, {attempt+1}/3): {e}")
+                if attempt < 2:
+                    time.sleep(2)
+        time.sleep(0.2)
 
     etfs = []
     for item in raw:
