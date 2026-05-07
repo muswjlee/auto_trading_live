@@ -1,0 +1,88 @@
+[
+  {
+    "date": "2026-05-06",
+    "total_pnl": 71701,
+    "total_cost": 14059,
+    "strategies": {
+      "vol_surge": {
+        "pnl": -41463,
+        "cost": 8553,
+        "gross_pnl": -32910,
+        "invested": 4782100,
+        "trades": 5,
+        "wins": 2,
+        "losses": 3
+      },
+      "기타": {
+        "pnl": 28910,
+        "cost": 0,
+        "gross_pnl": 28910,
+        "invested": 1422720,
+        "trades": 3,
+        "wins": 1,
+        "losses": 2
+      },
+      "vol_surge_0915": {
+        "pnl": 84254,
+        "cost": 5506,
+        "gross_pnl": 89760,
+        "invested": 2975780,
+        "trades": 3,
+        "wins": 3,
+        "losses": 0
+      }
+    }
+  },
+  {
+    "date": "2026-05-07",
+    "total_pnl": 79989,
+    "total_cost": 30519,
+    "strategies": {
+      "vol_surge_0905": {
+        "pnl": 91989,
+        "cost": 9119,
+        "gross_pnl": 101108,
+        "invested": 4972294,
+        "trades": 5,
+        "wins": 3,
+        "losses": 2
+      },
+      "vol_surge_vol30_0905": {
+        "pnl": 12421,
+        "cost": 3624,
+        "gross_pnl": 16045,
+        "invested": 1998610,
+        "trades": 2,
+        "wins": 1,
+        "losses": 1
+      },
+      "vol_surge": {
+        "pnl": -10466,
+        "cost": 7081,
+        "gross_pnl": -3385,
+        "invested": 3937190,
+        "trades": 4,
+        "wins": 2,
+        "losses": 2
+      },
+      "vol_surge_vol30_0910": {
+        "pnl": 18345,
+        "cost": 5405,
+        "gross_pnl": 23750,
+        "invested": 2981190,
+        "trades": 3,
+        "wins": 2,
+        "losses": 1
+      },
+      "vol_surge_0915": {
+        "pnl": -32300,
+        "cost": 5290,
+        "gross_pnl": -27010,
+        "invested": 2964150,
+        "trades": 3,
+        "wins": 1,
+        "losses": 2
+      }
+    }
+  }
+]

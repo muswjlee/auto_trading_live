@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "rsi_macd",
   "name": "RSI + MACD 골든크로스 전략",
   "enabled": false,
@@ -21,7 +21,7 @@
     },
     "sort_by": "execution_strength",
     "max_stocks": 3,
-    "amount_per_stock": 1000000,
+    "amount_per_stock": 500000,
     "order_type": "market"
   },
   "exit": {
@@ -29,3 +29,4 @@
     "stop_loss": -2.0
   }
 }
+

@@ -1,0 +1,18 @@
+{
+  "date": "2026-05-06",
+  "total_pnl": 71701,
+  "total_cost": 14059,
+  "trades": [
+    {"name": "삼성전자우", "code": "005935", "qty": 5, "buy_price": 180200, "sell_price": 183900, "gross_pnl": 18500, "cost": 1652, "pnl": 16848, "reason": "익절", "strategy_id": "vol_surge"},
+    {"name": "SOL AI반도체TOP2플러스", "code": "0167A0", "qty": 59, "buy_price": 16680, "sell_price": 17350, "gross_pnl": 39530, "cost": 0, "pnl": 39530, "reason": "익절", "strategy_id": ""},
+    {"name": "대우건설", "code": "006340", "qty": 52, "buy_price": 18920, "sell_price": 19340, "gross_pnl": 21840, "cost": 1808, "pnl": 20032, "reason": "익절", "strategy_id": "vol_surge_0915"},
+    {"name": "프로이천", "code": "321260", "qty": 290, "buy_price": 3440, "sell_price": 3355, "gross_pnl": -24650, "cost": 1755, "pnl": -26405, "reason": "손절", "strategy_id": "vol_surge"},
+    {"name": "프로이천", "code": "321260", "qty": 292, "buy_price": 3415, "sell_price": 3340, "gross_pnl": -21900, "cost": 1759, "pnl": -23659, "reason": "손절", "strategy_id": "vol_surge"},
+    {"name": "아진엑스텍", "code": "059120", "qty": 82, "buy_price": 12160, "sell_price": 11870, "gross_pnl": -23780, "cost": 1756, "pnl": -25536, "reason": "손절", "strategy_id": "vol_surge"},
+    {"name": "파코이엔지", "code": "037030", "qty": 122, "buy_price": 8150, "sell_price": 8530, "gross_pnl": 46360, "cost": 1866, "pnl": 44494, "reason": "익절", "strategy_id": "vol_surge_0915"},
+    {"name": "한우시스템", "code": "018880", "qty": 196, "buy_price": 5090, "sell_price": 5200, "gross_pnl": 21560, "cost": 1832, "pnl": 19728, "reason": "익절", "strategy_id": "vol_surge_0915"},
+    {"name": "루닛", "code": "493330", "qty": 14, "buy_price": 20350, "sell_price": 19820, "gross_pnl": -7420, "cost": 0, "pnl": -7420, "reason": "손절", "strategy_id": ""},
+    {"name": "자비스", "code": "183300", "qty": 1, "buy_price": 153700, "sell_price": 150500, "gross_pnl": -3200, "cost": 0, "pnl": -3200, "reason": "손절", "strategy_id": ""},
+    {"name": "KODEX 200", "code": "069500", "qty": 8, "buy_price": 111150, "sell_price": 113515, "gross_pnl": 18920, "cost": 1631, "pnl": 17289, "reason": "익절", "strategy_id": "vol_surge"}
+  ]
+}

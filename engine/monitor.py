@@ -20,6 +20,7 @@ from engine.notifier import notify_sell
 log = logging.getLogger(__name__)
 POSITION_FILE = os.path.join(os.path.dirname(__file__), "..", "positions.json")
 PNL_FILE      = os.path.join(os.path.dirname(__file__), "..", "daily_pnl.json")
+HISTORY_FILE  = os.path.join(os.path.dirname(__file__), "..", "strategy_history.json")
 
 _POS_LOCK = FileLock(POSITION_FILE + ".lock")
 _PNL_LOCK = FileLock(PNL_FILE + ".lock")
@@ -66,6 +67,53 @@ def remove_position(pos_key: str):
             json.dump(positions, f, ensure_ascii=False, indent=2)
 
 
+# ── 전략별 히스토리 ────────────────────────────────────────────────────────
+
+def _append_strategy_history(data: dict):
+    """일별 전략 손익 요약을 strategy_history.json에 기록"""
+    from collections import defaultdict
+    groups = defaultdict(lambda: {
+        "pnl": 0, "cost": 0, "gross_pnl": 0,
+        "invested": 0, "trades": 0, "wins": 0, "losses": 0,
+    })
+    for t in data.get("trades", []):
+        sid = t.get("strategy_id") or "기타"
+        g = groups[sid]
+        g["pnl"]       += t["pnl"]
+        g["cost"]       += t.get("cost", 0)
+        g["gross_pnl"]  += t.get("gross_pnl", t["pnl"])
+        g["invested"]   += t["buy_price"] * t["qty"]
+        g["trades"]     += 1
+        if t["pnl"] >= 0:
+            g["wins"] += 1
+        else:
+            g["losses"] += 1
+
+    entry = {
+        "date":       data["date"],
+        "total_pnl":  data["total_pnl"],
+        "total_cost": data.get("total_cost", 0),
+        "strategies": dict(groups),
+    }
+
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            history = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        history = []
+
+    for i, h in enumerate(history):
+        if h["date"] == data["date"]:
+            history[i] = entry
+            break
+    else:
+        history.append(entry)
+
+    history.sort(key=lambda x: x["date"])
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+
 # ── 일별 손익 기록 ─────────────────────────────────────────────────────────
 
 def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int,
@@ -87,6 +135,12 @@ def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int
             data = {}
 
         if data.get("date") != today:
+            # 이전 날 데이터 아카이브
+            if data.get("date") and data.get("trades"):
+                archive_path = PNL_FILE.replace("daily_pnl.json", f"pnl_{data['date']}.json")
+                with open(archive_path, "w", encoding="utf-8") as af:
+                    json.dump(data, af, ensure_ascii=False, indent=2)
+                _append_strategy_history(data)
             data = {"date": today, "total_pnl": 0, "total_cost": 0, "trades": []}
 
         data["total_pnl"]  += net_pnl
@@ -123,6 +177,39 @@ def load_daily_pnl() -> dict:
 
 # ── 모니터링 루프 ──────────────────────────────────────────────────────────
 
+def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
+                      current: int, reason: str, sid: str) -> bool:
+    """매도 실행 — 500에러 시 잔고 확인으로 체결 여부 판단 후 position 정리"""
+    code      = pos.get("code") or pos_key.split("_")[0]
+    name      = pos["name"]
+    buy_price = pos["buy_price"]
+    qty       = pos["qty"]
+
+    sold = False
+    try:
+        api.sell(code, qty)
+        sold = True
+    except Exception as e:
+        log.warning(f"[매도 500에러] {name}({code}) [{sid}]: {e}")
+        try:
+            bal  = api.get_balance()
+            held = {s.get("pdno") for s in bal.get("stocks", [])}
+            if code not in held:
+                log.info(f"[{name}] 500에러지만 잔고에 없음 → 체결 확인")
+                sold = True
+            else:
+                log.error(f"[매도 실패] {name}({code}) [{sid}]: 잔고 확인 결과 여전히 보유 중 — 다음 주기 재시도")
+        except Exception as e2:
+            log.error(f"[매도 실패] {name}({code}): 잔고 확인 오류 {e2}")
+
+    if sold:
+        notify_sell(name, code, qty, buy_price, current, reason, sid)
+        record_trade(name, code, qty, buy_price, current, reason, sid)
+        remove_position(pos_key)
+
+    return sold
+
+
 def check_and_exit(api: KISApi, strategies: list):
     """보유 포지션 중 자신의 전략 포지션만 체크 후 조건 충족 시 매도"""
     positions = load_positions()
@@ -153,17 +240,11 @@ def check_and_exit(api: KISApi, strategies: list):
 
             if pnl_pct >= take_profit:
                 log.info(f"[익절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
-                api.sell(code, pos["qty"])
-                notify_sell(pos["name"], code, pos["qty"], buy_price, current, "익절", sid)
-                record_trade(pos["name"], code, pos["qty"], buy_price, current, "익절", sid)
-                remove_position(pos_key)
+                _sell_with_verify(api, pos, pos_key, current, "익절", sid)
 
             elif pnl_pct <= stop_loss:
                 log.info(f"[손절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
-                api.sell(code, pos["qty"])
-                notify_sell(pos["name"], code, pos["qty"], buy_price, current, "손절", sid)
-                record_trade(pos["name"], code, pos["qty"], buy_price, current, "손절", sid)
-                remove_position(pos_key)
+                _sell_with_verify(api, pos, pos_key, current, "손절", sid)
 
             time.sleep(0.1)
 

@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "vol_surge_0905",
   "name": "거래량 급등 + 체결강도 전략 (09:05)",
   "enabled": true,
@@ -18,7 +18,7 @@
     "max_change_rate": 10.0,
     "sort_by": "execution_strength",
     "max_stocks": 3,
-    "amount_per_stock": 1000000,
+    "amount_per_stock": 500000,
     "order_type": "market"
   },
   "exit": {
@@ -26,3 +26,4 @@
     "stop_loss": -2.0
   }
 }
+
