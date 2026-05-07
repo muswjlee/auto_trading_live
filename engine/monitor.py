@@ -102,6 +102,12 @@ def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int
             json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def is_code_held(code: str) -> bool:
+    """해당 종목이 이미 어떤 전략에서든 보유 중인지 확인 (크로스 전략 중복 매수 방지)"""
+    positions = load_positions()
+    return any(v["code"] == code for v in positions.values())
+
+
 def load_daily_pnl() -> dict:
     today = str(date.today())
     with _PNL_LOCK:

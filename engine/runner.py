@@ -14,7 +14,7 @@ from kis_api import KISApi
 from engine.screener import screen
 from engine.monitor import (
     add_position, check_and_exit, load_positions,
-    remove_position, record_trade, load_daily_pnl,
+    remove_position, record_trade, load_daily_pnl, is_code_held,
 )
 from engine.notifier import notify_buy, notify_no_signal, notify_error, notify_sell, send
 
@@ -62,6 +62,11 @@ def execute_entry(api: KISApi, strategy: dict, log):
         qty   = max(1, amount // price)
 
         try:
+            # 다른 전략에서 이미 매수한 종목 건너뜀
+            if is_code_held(code):
+                log.info(f"[{name}] 이미 다른 전략에서 보유 중 → 건너뜀")
+                continue
+
             cash = api.get_cash()
             if cash < qty * price:
                 msg = f"[{name}] 잔고 부족 (필요 {qty*price:,}원 / 보유 {cash:,}원)"
@@ -70,19 +75,33 @@ def execute_entry(api: KISApi, strategy: dict, log):
                 continue
 
             last_err = None
+            bought = False
             for attempt in range(3):
                 try:
                     result = api.buy(code, qty, price=0)
                     log.info(f"[매수] {name}({code}) {qty}주  주문번호={result.get('odno')}")
                     notify_buy(name, code, qty, price, strategy["name"])
                     add_position(code, name, price, qty, strategy["id"])
+                    bought = True
                     break
                 except Exception as e:
                     last_err = e
                     log.warning(f"[매수 재시도 {attempt+1}/3] {name}({code}): {e}")
                     if attempt < 2:
                         time.sleep(1.0 * (attempt + 1))
-            else:
+                        # 500 에러라도 실제 체결됐을 수 있으므로 잔고 확인
+                        try:
+                            bal = api.get_balance()
+                            held = {s.get("pdno") for s in bal.get("stocks", [])}
+                            if code in held:
+                                log.info(f"[{name}] 500 에러지만 실제 체결 확인 → 재시도 취소, 포지션 등록")
+                                notify_buy(name, code, qty, price, strategy["name"])
+                                add_position(code, name, price, qty, strategy["id"])
+                                bought = True
+                                break
+                        except Exception:
+                            pass
+            if not bought:
                 log.error(f"[매수 오류] {name}({code}): {last_err}")
                 notify_error(f"매수 실패 {name}({code}): {last_err}")
             time.sleep(0.3)
