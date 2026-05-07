@@ -131,6 +131,15 @@ def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int
         try:
             with open(PNL_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
+        except UnicodeDecodeError:
+            try:
+                with open(PNL_FILE, "r", encoding="cp949") as f:
+                    data = json.load(f)
+                with open(PNL_FILE, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                log.warning("daily_pnl.json cp949 → utf-8 변환 완료")
+            except Exception:
+                data = {}
         except (FileNotFoundError, json.JSONDecodeError):
             data = {}
 
@@ -165,13 +174,22 @@ def is_code_held(code: str) -> bool:
 def load_daily_pnl() -> dict:
     today = str(date.today())
     with _PNL_LOCK:
+        data = None
         try:
             with open(PNL_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if data.get("date") == today:
-                return data
+        except UnicodeDecodeError:
+            try:
+                with open(PNL_FILE, "r", encoding="cp949") as f:
+                    data = json.load(f)
+                with open(PNL_FILE, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
         except (FileNotFoundError, json.JSONDecodeError):
             pass
+        if data and data.get("date") == today:
+            return data
     return {"date": today, "total_pnl": 0, "total_cost": 0, "trades": []}
 
 
@@ -204,7 +222,10 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
 
     if sold:
         notify_sell(name, code, qty, buy_price, current, reason, sid)
-        record_trade(name, code, qty, buy_price, current, reason, sid)
+        try:
+            record_trade(name, code, qty, buy_price, current, reason, sid)
+        except Exception as e:
+            log.error(f"[손익 기록 실패] {name}({code}): {e}")
         remove_position(pos_key)
 
     return sold

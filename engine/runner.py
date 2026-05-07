@@ -122,11 +122,25 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
         try:
             price_info = api.get_price(code)
             current    = int(price_info["stck_prpr"])
-            api.sell(code, pos["qty"])
-            notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", strategy["name"])
-            record_trade(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", sid)
-            remove_position(pos_key)
-            log.info(f"[장마감 강제매도] {pos['name']}({code}) 완료")
+            sold = False
+            try:
+                api.sell(code, pos["qty"])
+                sold = True
+            except Exception as e:
+                err = str(e)
+                if "잔고내역이 없습니다" in err:
+                    log.warning(f"[장마감 강제매도] {pos['name']}({code}) 이미 매도됨 → 포지션만 제거")
+                    sold = True
+                else:
+                    raise
+            if sold:
+                notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", strategy["name"])
+                try:
+                    record_trade(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", sid)
+                except Exception as e:
+                    log.error(f"[손익 기록 실패] {pos['name']}({code}): {e}")
+                remove_position(pos_key)
+                log.info(f"[장마감 강제매도] {pos['name']}({code}) 완료")
         except Exception as e:
             log.error(f"[장마감 강제매도 오류] {pos_key}: {e}")
             notify_error(f"장마감 강제매도 실패 {pos['name']}({code}): {e}")
