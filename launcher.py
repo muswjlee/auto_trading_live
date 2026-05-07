@@ -14,8 +14,9 @@ from kis_api import KISApi
 from engine.monitor import load_daily_pnl
 from engine.notifier import send, notify_error
 
-_BASE    = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE = os.path.join(_BASE, "launcher.log")
+_BASE     = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE  = os.path.join(_BASE, "launcher.log")
+_PID_FILE = os.path.join(_BASE, "launcher.pid")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,10 +31,40 @@ log = logging.getLogger("launcher")
 _children: list[subprocess.Popen] = []
 
 
+def _check_already_running() -> bool:
+    """이미 실행 중인 런처가 있으면 True 반환"""
+    if not os.path.exists(_PID_FILE):
+        return False
+    try:
+        with open(_PID_FILE, "r") as f:
+            pid = int(f.read().strip())
+        import psutil
+        if psutil.pid_exists(pid):
+            proc = psutil.Process(pid)
+            if "python" in proc.name().lower():
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _write_pid():
+    with open(_PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+
+
+def _remove_pid():
+    try:
+        os.remove(_PID_FILE)
+    except Exception:
+        pass
+
+
 def _shutdown(signum, frame):
     log.info("종료 신호 수신 — 자식 프로세스 종료 중...")
     for p in _children:
         p.terminate()
+    _remove_pid()
     send(f"🛑 자동매매 강제 종료  {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     sys.exit(0)
 
@@ -96,6 +127,11 @@ def send_total_summary(today: str):
 
 
 def main():
+    if _check_already_running():
+        log.warning("이미 실행 중인 런처가 있습니다. 중복 실행 방지로 종료합니다.")
+        sys.exit(0)
+    _write_pid()
+
     strategies = load_enabled_strategies()
     if not strategies:
         log.error("활성화된 전략이 없습니다.")
@@ -142,6 +178,7 @@ def main():
 
     # 통합 결산 전송
     send_total_summary(str(now.date()))
+    _remove_pid()
 
 
 if __name__ == "__main__":
@@ -150,3 +187,4 @@ if __name__ == "__main__":
     except Exception as e:
         log.error(f"런처 오류:\n{traceback.format_exc()}")
         notify_error(f"런처 오류: {e}")
+        _remove_pid()
