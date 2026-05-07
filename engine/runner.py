@@ -14,7 +14,7 @@ from kis_api import KISApi
 from engine.screener import screen
 from engine.monitor import (
     add_position, check_and_exit, load_positions,
-    remove_position, record_trade, load_daily_pnl, is_code_held,
+    remove_position, record_trade, load_daily_pnl,
 )
 from engine.notifier import notify_buy, notify_no_signal, notify_error, notify_sell, send
 
@@ -62,11 +62,6 @@ def execute_entry(api: KISApi, strategy: dict, log):
         qty   = max(1, amount // price)
 
         try:
-            # 다른 전략에서 이미 매수한 종목 건너뜀
-            if is_code_held(code):
-                log.info(f"[{name}] 이미 다른 전략에서 보유 중 → 건너뜀")
-                continue
-
             cash = api.get_cash()
             if cash < qty * price:
                 msg = f"[{name}] 잔고 부족 (필요 {qty*price:,}원 / 보유 {cash:,}원)"
