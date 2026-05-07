@@ -30,7 +30,7 @@ _PNL_LOCK = FileLock(PNL_FILE + ".lock")
 def load_positions() -> dict:
     with _POS_LOCK:
         try:
-            with open(POSITION_FILE, "r") as f:
+            with open(POSITION_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return {}
@@ -40,7 +40,7 @@ def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: st
     pos_key = f"{code}_{strategy_id}"
     with _POS_LOCK:
         try:
-            with open(POSITION_FILE, "r") as f:
+            with open(POSITION_FILE, "r", encoding="utf-8") as f:
                 positions = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             positions = {}
@@ -49,7 +49,7 @@ def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: st
             "buy_price": buy_price, "qty": qty,
             "strategy_id": strategy_id,
         }
-        with open(POSITION_FILE, "w") as f:
+        with open(POSITION_FILE, "w", encoding="utf-8") as f:
             json.dump(positions, f, ensure_ascii=False, indent=2)
     log.info(f"[포지션 등록] {name}({code}) {qty}주 @ {buy_price:,}원 [{strategy_id}]")
 
@@ -57,12 +57,12 @@ def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: st
 def remove_position(pos_key: str):
     with _POS_LOCK:
         try:
-            with open(POSITION_FILE, "r") as f:
+            with open(POSITION_FILE, "r", encoding="utf-8") as f:
                 positions = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             positions = {}
         positions.pop(pos_key, None)
-        with open(POSITION_FILE, "w") as f:
+        with open(POSITION_FILE, "w", encoding="utf-8") as f:
             json.dump(positions, f, ensure_ascii=False, indent=2)
 
 
@@ -81,7 +81,7 @@ def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int
 
     with _PNL_LOCK:
         try:
-            with open(PNL_FILE, "r") as f:
+            with open(PNL_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             data = {}
@@ -98,7 +98,7 @@ def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int
             "reason": reason, "strategy_id": strategy_id,
         })
 
-        with open(PNL_FILE, "w") as f:
+        with open(PNL_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
 
@@ -112,7 +112,7 @@ def load_daily_pnl() -> dict:
     today = str(date.today())
     with _PNL_LOCK:
         try:
-            with open(PNL_FILE, "r") as f:
+            with open(PNL_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if data.get("date") == today:
                 return data
