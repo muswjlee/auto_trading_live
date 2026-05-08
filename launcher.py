@@ -7,8 +7,9 @@ import signal
 import logging
 import subprocess
 import traceback
+import threading
 from glob import glob
-from datetime import datetime
+from datetime import datetime, date
 
 from kis_api import KISApi
 from engine.monitor import load_daily_pnl
@@ -146,23 +147,6 @@ def main():
         send(msg)
         return
 
-    # 체결강도 API 점검
-    def _check_execution_strength() -> str:
-        try:
-            samples = [("005930", "삼성전자"), ("000660", "SK하이닉스"), ("005380", "현대차")]
-            results = []
-            for code, name in samples:
-                v = api.get_execution_strength(code)
-                results.append(f"{name}: {v}")
-            non_zero = [v for _, v in [(c, api.get_execution_strength(c)) for c, _ in samples] if v > 0]
-            status = "✅ 정상" if non_zero else "❌ 비정상(0.0)"
-            return status + "\n" + "\n".join(f"  {r}" for r in results)
-        except Exception as e:
-            return f"❌ 점검 오류: {e}"
-
-    strength_check = _check_execution_strength()
-    log.info(f"체결강도 점검: {strength_check}")
-
     # 시작 메시지
     names = "\n".join(
         f"  • {s['name']} ({s['schedule'].get('entry_time', s['schedule'].get('start_time', ''))})"
@@ -171,9 +155,34 @@ def main():
     log.info(f"자동매매 시작 | {len(strategies)}개 전략")
     send(
         f"🚀 <b>자동매매 시작</b>  {now.strftime('%Y-%m-%d %H:%M')}\n"
-        f"활성 전략 {len(strategies)}개:\n{names}\n\n"
-        f"📡 체결강도 점검: {strength_check}"
+        f"활성 전략 {len(strategies)}개:\n{names}"
     )
+
+    # 09:05 체결강도 점검 (백그라운드 스레드)
+    def _execution_strength_check_thread():
+        try:
+            from datetime import datetime as _dt
+            import time as _time
+            target = _dt.now().replace(hour=9, minute=5, second=0, microsecond=0)
+            wait_sec = (target - _dt.now()).total_seconds()
+            if wait_sec > 0:
+                _time.sleep(wait_sec)
+            samples = [("005930", "삼성전자"), ("000660", "SK하이닉스"), ("005380", "현대차")]
+            lines = []
+            non_zero = 0
+            for code, name in samples:
+                v = api.get_execution_strength(code)
+                lines.append(f"  {name}: {v}")
+                if v > 0:
+                    non_zero += 1
+            status = "✅ 정상" if non_zero > 0 else "❌ 비정상(전부 0.0)"
+            msg = f"📡 <b>체결강도 점검 (09:05)</b> — {status}\n" + "\n".join(lines)
+            log.info(f"체결강도 점검: {status}")
+            send(msg)
+        except Exception as e:
+            log.error(f"체결강도 점검 오류: {e}")
+
+    threading.Thread(target=_execution_strength_check_thread, daemon=True).start()
 
     # 전략별 프로세스 실행 (type에 따라 runner 분기)
     runner_map = {
