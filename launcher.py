@@ -146,6 +146,23 @@ def main():
         send(msg)
         return
 
+    # 체결강도 API 점검
+    def _check_execution_strength() -> str:
+        try:
+            samples = [("005930", "삼성전자"), ("000660", "SK하이닉스"), ("005380", "현대차")]
+            results = []
+            for code, name in samples:
+                v = api.get_execution_strength(code)
+                results.append(f"{name}: {v}")
+            non_zero = [v for _, v in [(c, api.get_execution_strength(c)) for c, _ in samples] if v > 0]
+            status = "✅ 정상" if non_zero else "❌ 비정상(0.0)"
+            return status + "\n" + "\n".join(f"  {r}" for r in results)
+        except Exception as e:
+            return f"❌ 점검 오류: {e}"
+
+    strength_check = _check_execution_strength()
+    log.info(f"체결강도 점검: {strength_check}")
+
     # 시작 메시지
     names = "\n".join(
         f"  • {s['name']} ({s['schedule'].get('entry_time', s['schedule'].get('start_time', ''))})"
@@ -154,7 +171,8 @@ def main():
     log.info(f"자동매매 시작 | {len(strategies)}개 전략")
     send(
         f"🚀 <b>자동매매 시작</b>  {now.strftime('%Y-%m-%d %H:%M')}\n"
-        f"활성 전략 {len(strategies)}개:\n{names}"
+        f"활성 전략 {len(strategies)}개:\n{names}\n\n"
+        f"📡 체결강도 점검: {strength_check}"
     )
 
     # 전략별 프로세스 실행 (type에 따라 runner 분기)
