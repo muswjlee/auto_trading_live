@@ -208,6 +208,12 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
         api.sell(code, qty)
         sold = True
     except Exception as e:
+        err = str(e)
+        if "잔고내역이 없습니다" in err:
+            # 이미 매도된 포지션 — 기록 없이 포지션만 제거
+            log.warning(f"[{name}({code})] 잔고 없음 → 이미 매도된 포지션, 기록 없이 제거")
+            remove_position(pos_key)
+            return False
         log.warning(f"[매도 500에러] {name}({code}) [{sid}]: {e}")
         try:
             bal  = api.get_balance()
