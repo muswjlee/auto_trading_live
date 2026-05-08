@@ -37,7 +37,8 @@ def load_positions() -> dict:
             return {}
 
 
-def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: str):
+def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: str,
+                 execution_strength: float = 0.0, change_rate: float = 0.0, vwap_ratio: float = 0.0):
     pos_key = f"{code}_{strategy_id}"
     with _POS_LOCK:
         try:
@@ -49,10 +50,13 @@ def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: st
             "code": code, "name": name,
             "buy_price": buy_price, "qty": qty,
             "strategy_id": strategy_id,
+            "execution_strength": execution_strength,
+            "change_rate": change_rate,
+            "vwap_ratio": vwap_ratio,
         }
         with open(POSITION_FILE, "w", encoding="utf-8") as f:
             json.dump(positions, f, ensure_ascii=False, indent=2)
-    log.info(f"[포지션 등록] {name}({code}) {qty}주 @ {buy_price:,}원 [{strategy_id}]")
+    log.info(f"[포지션 등록] {name}({code}) {qty}주 @ {buy_price:,}원 [{strategy_id}] 등락률={change_rate}% 체결강도={execution_strength} VWAP비율={vwap_ratio}")
 
 
 def remove_position(pos_key: str):
@@ -117,7 +121,8 @@ def _append_strategy_history(data: dict):
 # ── 일별 손익 기록 ─────────────────────────────────────────────────────────
 
 def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int,
-                 reason: str, strategy_id: str = ""):
+                 reason: str, strategy_id: str = "", execution_strength: float = 0.0,
+                 change_rate: float = 0.0, vwap_ratio: float = 0.0):
     """매도 완료 시 손익을 daily_pnl.json에 누적 (수수료·세금 차감 후 순손익)"""
     today     = str(date.today())
     gross_pnl = (sell_price - buy_price) * qty
@@ -159,6 +164,9 @@ def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int
             "buy_price": buy_price, "sell_price": sell_price,
             "gross_pnl": gross_pnl, "cost": total_cost, "pnl": net_pnl,
             "reason": reason, "strategy_id": strategy_id,
+            "execution_strength": execution_strength,
+            "change_rate": change_rate,
+            "vwap_ratio": vwap_ratio,
         })
 
         with open(PNL_FILE, "w", encoding="utf-8") as f:
@@ -229,7 +237,10 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
     if sold:
         notify_sell(name, code, qty, buy_price, current, reason, sid)
         try:
-            record_trade(name, code, qty, buy_price, current, reason, sid)
+            record_trade(name, code, qty, buy_price, current, reason, sid,
+                         pos.get("execution_strength", 0.0),
+                         pos.get("change_rate", 0.0),
+                         pos.get("vwap_ratio", 0.0))
         except Exception as e:
             log.error(f"[손익 기록 실패] {name}({code}): {e}")
         remove_position(pos_key)

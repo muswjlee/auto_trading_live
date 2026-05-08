@@ -1,10 +1,12 @@
-﻿{
-  "id": "vol_surge",
-  "name": "거래량 급등 + 체결강도 전략",
+{
+  "id": "vol_surge_fulltime",
+  "name": "거래량 급등 풀타임 전략",
   "enabled": true,
   "schedule": {
-    "entry_time": "09:10",
-    "monitor_interval_sec": 30
+    "entry_time": "09:01",
+    "entry_end_time": "15:00",
+    "monitor_interval_sec": 30,
+    "continuous_entry": true
   },
   "universe": {
     "market": "0",
@@ -16,14 +18,15 @@
   "entry": {
     "min_change_rate": 5.0,
     "max_change_rate": 10.0,
+    "min_execution_strength": 120,
+    "min_vwap_ratio": 103,
     "sort_by": "execution_strength",
-    "max_stocks": 3,
+    "max_stocks": 1,
     "amount_per_stock": 500000,
     "order_type": "market"
   },
   "exit": {
     "take_profit": 2.0,
-    "stop_loss": -2.0
+    "stop_loss": -1.0
   }
 }
-

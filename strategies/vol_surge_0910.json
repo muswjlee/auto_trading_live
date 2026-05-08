@@ -1,14 +1,14 @@
 {
-    "id":  "vol_surge_vol30_0915",
-    "name":  "거래량 급등 + 체결강도 전략 (전일대비 30%, 09:15)",
+    "id":  "vol_surge_0910",
+    "name":  "거래량 급등 + 체결강도 전략 (09:10)",
     "enabled":  true,
     "schedule":  {
-                     "entry_time":  "09:15",
+                     "entry_time":  "09:10",
                      "monitor_interval_sec":  30
                  },
     "universe":  {
                      "market":  "0",
-                     "top_volume":  200,
+                     "top_volume":  100,
                      "min_price":  1000,
                      "max_price":  200000,
                      "exclude_etf":  true
@@ -20,8 +20,7 @@
                   "max_stocks":  3,
                   "amount_per_stock":  500000,
                   "order_type":  "market",
-                  "min_execution_strength":  120,
-                  "min_vwap_ratio":  103
+                  "min_execution_strength":  120
               },
     "exit":  {
                  "take_profit":  2.0,

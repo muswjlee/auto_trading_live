@@ -19,12 +19,8 @@ def is_etf(name: str) -> bool:
     return any(upper.startswith(p) for p in _ETF_PREFIXES)
 
 
-def get_execution_strength(price_info: dict) -> float:
-    buy  = float(price_info.get("shnu_cntg_smtn", 0))
-    sell = float(price_info.get("seln_cntg_smtn", 0))
-    if sell == 0:
-        return 0.0
-    return round(buy / sell * 100, 2)
+def get_execution_strength(api: KISApi, stock_code: str) -> float:
+    return api.get_execution_strength(stock_code)
 
 
 def is_upper_limit(price_info: dict) -> bool:
@@ -131,9 +127,24 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
     result = []
     for s in candidates:
         try:
-            price_info = api.get_price(s["code"])
-            strength   = get_execution_strength(price_info)
-            at_limit   = is_upper_limit(price_info)
+            price_info   = api.get_price(s["code"])
+            strength     = get_execution_strength(api, s["code"])
+            min_strength = entry.get("min_execution_strength")
+            if min_strength is not None and strength < min_strength:
+                log.info(f"  {s['name']} 체결강도 {strength} < {min_strength} → 제외")
+                continue
+            at_limit = is_upper_limit(price_info)
+
+            vwap = float(price_info.get("wghn_avrg_stck_prc", 0) or 0)
+            vwap_ratio = round(int(price_info["stck_prpr"]) / vwap * 100, 2) if vwap > 0 else 0.0
+
+            min_vwap_ratio = entry.get("min_vwap_ratio")
+            if min_vwap_ratio is not None and vwap_ratio > 0:
+                if vwap_ratio < min_vwap_ratio:
+                    log.info(f"  {s['name']} 현재가/VWAP {vwap_ratio:.1f} < {min_vwap_ratio} → 제외")
+                    continue
+                log.info(f"  {s['name']} 현재가/VWAP {vwap_ratio:.1f} ✓")
+
             per, pbr   = None, None
 
             if min_volume_ratio is not None:
@@ -206,6 +217,7 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
                 "price":              int(price_info["stck_prpr"]),
                 "change_rate":        s.get("change_rate", 0),
                 "execution_strength": strength,
+                "vwap_ratio":         vwap_ratio,
                 "at_upper_limit":     at_limit,
                 "per":                per,
                 "pbr":                pbr,
@@ -214,7 +226,7 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
             })
             log.info(
                 f"  {s['name']}({s['code']}) 등락률 {s.get('change_rate', 0)}%"
-                f" 체결강도 {strength}"
+                f" 체결강도 {strength} VWAP비율 {vwap_ratio:.1f}"
                 + (f" PER {per}" if per else "")
                 + (f" PBR {pbr}" if pbr else "")
                 + (f" RSI {rsi_val}" if rsi_val is not None else "")

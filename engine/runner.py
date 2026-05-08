@@ -47,11 +47,14 @@ def load_strategy(strategy_id: str) -> dict:
 
 # ── 매수 실행 ──────────────────────────────────────────────────────────────
 
-def execute_entry(api: KISApi, strategy: dict, log):
+def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = False):
     selected = screen(api, strategy)
     if not selected:
-        log.info("매수 대상 종목 없음")
-        notify_no_signal(strategy["name"])
+        if suppress_no_signal:
+            log.info("매수 대상 종목 없음 (연속진입 — 알림 생략)")
+        else:
+            log.info("매수 대상 종목 없음")
+            notify_no_signal(strategy["name"])
         return
 
     amount = strategy["entry"]["amount_per_stock"]
@@ -76,7 +79,10 @@ def execute_entry(api: KISApi, strategy: dict, log):
                     result = api.buy(code, qty, price=0)
                     log.info(f"[매수] {name}({code}) {qty}주  주문번호={result.get('odno')}")
                     notify_buy(name, code, qty, price, strategy["name"])
-                    add_position(code, name, price, qty, strategy["id"])
+                    add_position(code, name, price, qty, strategy["id"],
+                                 stock.get("execution_strength", 0.0),
+                                 stock.get("change_rate", 0.0),
+                                 stock.get("vwap_ratio", 0.0))
                     bought = True
                     break
                 except Exception as e:
@@ -91,7 +97,10 @@ def execute_entry(api: KISApi, strategy: dict, log):
                             if code in held:
                                 log.info(f"[{name}] 500 에러지만 실제 체결 확인 → 재시도 취소, 포지션 등록")
                                 notify_buy(name, code, qty, price, strategy["name"])
-                                add_position(code, name, price, qty, strategy["id"])
+                                add_position(code, name, price, qty, strategy["id"],
+                                             stock.get("execution_strength", 0.0),
+                                             stock.get("change_rate", 0.0),
+                                             stock.get("vwap_ratio", 0.0))
                                 bought = True
                                 break
                         except Exception:
@@ -136,7 +145,10 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
             if sold:
                 notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", strategy["name"])
                 try:
-                    record_trade(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", sid)
+                    record_trade(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", sid,
+                                 pos.get("execution_strength", 0.0),
+                                 pos.get("change_rate", 0.0),
+                                 pos.get("vwap_ratio", 0.0))
                 except Exception as e:
                     log.error(f"[손익 기록 실패] {pos['name']}({code}): {e}")
                 remove_position(pos_key)
@@ -216,9 +228,16 @@ def run(strategy_id: str):
     h, m     = map(int, strategy["schedule"]["entry_time"].split(":"))
     entry_t  = h * 100 + m
     interval = strategy["schedule"]["monitor_interval_sec"]
+    continuous = strategy["schedule"].get("continuous_entry", False)
+
+    entry_end_t = 1500  # 기본값
+    if continuous:
+        h_end, m_end = map(int, strategy["schedule"].get("entry_end_time", "15:00").split(":"))
+        entry_end_t  = h_end * 100 + m_end
 
     api = KISApi()
-    log.info(f"[{sid}] 프로세스 시작 | 진입: {strategy['schedule']['entry_time']}")
+    log.info(f"[{sid}] 프로세스 시작 | 진입: {strategy['schedule']['entry_time']}"
+             + (" (연속진입)" if continuous else ""))
 
     entry_done       = False
     force_sold_day   = None
@@ -250,11 +269,20 @@ def run(strategy_id: str):
             time.sleep(30)
             continue
 
-        # 매수
-        if not entry_done and entry_t <= t < entry_t + 10:
-            log.info(f"=== [{sid}] 매수 실행 ===")
-            execute_entry(api, strategy, log)
-            entry_done = True
+        if continuous:
+            # 연속진입: 09:01 ~ entry_end_t 동안 포지션 없을 때마다 매수 시도
+            if entry_t <= t < entry_end_t:
+                my_pos = {k: v for k, v in load_positions().items()
+                          if v.get("strategy_id") == sid}
+                if not my_pos:
+                    log.info(f"=== [{sid}] 매수 시도 (연속진입) ===")
+                    execute_entry(api, strategy, log, suppress_no_signal=True)
+        else:
+            # 일반: 진입 시간대 1회 매수
+            if not entry_done and entry_t <= t < entry_t + 10:
+                log.info(f"=== [{sid}] 매수 실행 ===")
+                execute_entry(api, strategy, log)
+                entry_done = True
 
         # 모니터링 (자신의 포지션만 체크)
         if 900 <= t < 1520:

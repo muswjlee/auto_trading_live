@@ -197,6 +197,22 @@ class KISApi:
 
         return True  # 모든 확인 실패 시 거래일로 간주
 
+    def get_execution_strength(self, stock_code: str) -> float:
+        """당일 체결강도 조회 (inquire-ccnl의 tday_rltv 필드)"""
+        try:
+            res = requests.get(
+                f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-ccnl",
+                headers=self._headers("FHKST01010300"),
+                params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": stock_code},
+            )
+            res.raise_for_status()
+            output = res.json().get("output", [])
+            if output:
+                return float(output[0].get("tday_rltv", 0))
+        except Exception:
+            pass
+        return 0.0
+
     def get_ohlcv(self, stock_code: str, period: str = "D", count: int = 30) -> list[dict]:
         """일/주/월 OHLCV 조회 (period: D/W/M)"""
         res = requests.get(
