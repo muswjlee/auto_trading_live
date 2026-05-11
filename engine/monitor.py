@@ -18,9 +18,10 @@ from kis_api import KISApi
 from engine.notifier import notify_sell
 
 log = logging.getLogger(__name__)
-POSITION_FILE = os.path.join(os.path.dirname(__file__), "..", "positions.json")
-PNL_FILE      = os.path.join(os.path.dirname(__file__), "..", "daily_pnl.json")
-HISTORY_FILE  = os.path.join(os.path.dirname(__file__), "..", "strategy_history.json")
+POSITION_FILE   = os.path.join(os.path.dirname(__file__), "..", "positions.json")
+PNL_FILE        = os.path.join(os.path.dirname(__file__), "..", "daily_pnl.json")
+HISTORY_FILE    = os.path.join(os.path.dirname(__file__), "..", "strategy_history.json")
+BALANCE_FILE    = os.path.join(os.path.dirname(__file__), "..", "balance_history.json")
 
 _POS_LOCK = FileLock(POSITION_FILE + ".lock")
 _PNL_LOCK = FileLock(PNL_FILE + ".lock")
@@ -116,6 +117,52 @@ def _append_strategy_history(data: dict):
     history.sort(key=lambda x: x["date"])
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+# ── 일별 잔고 기록 ─────────────────────────────────────────────────────────
+
+def record_daily_balance(cash: int, total: int, asset_change: int, buy_amt: int, sell_amt: int):
+    """장마감 후 계좌 잔고 정보를 balance_history.json에 기록"""
+    today = str(date.today())
+    entry = {
+        "date":           today,
+        "dnca_tot_amt":   cash,
+        "tot_evlu_amt":   total,
+        "asst_icdc_amt":  asset_change,
+        "thdt_buy_amt":   buy_amt,
+        "thdt_sll_amt":   sell_amt,
+    }
+    try:
+        with open(BALANCE_FILE, "r", encoding="utf-8") as f:
+            history = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        history = []
+
+    for i, h in enumerate(history):
+        if h["date"] == today:
+            history[i] = entry
+            break
+    else:
+        history.append(entry)
+
+    history.sort(key=lambda x: x["date"])
+    with open(BALANCE_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+    log.info(f"잔고 기록 완료: 예수금={cash:,} 총평가={total:,} 자산증감={asset_change:+,}")
+
+
+def load_prev_cash() -> int:
+    """전일 예수금 반환 — balance_history.json의 오늘 이전 가장 최근 기록"""
+    today = str(date.today())
+    try:
+        with open(BALANCE_FILE, "r", encoding="utf-8") as f:
+            history = json.load(f)
+        prev = [h for h in history if h["date"] < today]
+        if prev:
+            return int(prev[-1]["dnca_tot_amt"])
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return 0
 
 
 # ── 일별 손익 기록 ─────────────────────────────────────────────────────────

@@ -18,9 +18,10 @@
                   "max_change_rate":  10.0,
                   "sort_by":  "execution_strength",
                   "max_stocks":  3,
-                  "amount_per_stock":  500000,
+                  "amount_per_stock":  1000000,
                   "order_type":  "market",
-                  "min_execution_strength":  120
+                  "min_execution_strength":  120,
+                  "min_vwap_ratio":  100
               },
     "exit":  {
                  "take_profit":  2.0,

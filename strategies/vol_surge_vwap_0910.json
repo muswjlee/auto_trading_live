@@ -1,9 +1,9 @@
 {
-    "id":  "vol_surge_vol30_0915",
-    "name":  "거래량 급등 + 체결강도 전략 (전일대비 30%, 09:15)",
-    "enabled":  true,
+    "id":  "vol_surge_vwap_0910",
+    "name":  "거래량 급등 + VWAP 전략 (09:10)",
+    "enabled":  false,
     "schedule":  {
-                     "entry_time":  "09:15",
+                     "entry_time":  "09:10",
                      "monitor_interval_sec":  30
                  },
     "universe":  {

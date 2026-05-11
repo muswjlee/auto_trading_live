@@ -14,7 +14,7 @@ from kis_api import KISApi
 from engine.screener import screen
 from engine.monitor import (
     add_position, check_and_exit, load_positions,
-    remove_position, record_trade, load_daily_pnl,
+    remove_position, record_trade, load_daily_pnl, load_prev_cash,
 )
 from engine.notifier import notify_buy, notify_no_signal, notify_error, notify_sell, send
 
@@ -236,6 +236,16 @@ def run(strategy_id: str):
         entry_end_t  = h_end * 100 + m_end
 
     api = KISApi()
+
+    # 전일 예수금 기반 종목당 매수금액 동적 설정 (10%)
+    prev_cash = load_prev_cash()
+    if prev_cash > 0:
+        amount = int(prev_cash * 0.1)
+        strategy["entry"]["amount_per_stock"] = amount
+        log.info(f"[{sid}] 종목당 매수금액: {amount:,}원 (전일 예수금 {prev_cash:,}원의 10%)")
+    else:
+        log.info(f"[{sid}] 전일 잔고 없음 — 기본값 사용: {strategy['entry']['amount_per_stock']:,}원")
+
     log.info(f"[{sid}] 프로세스 시작 | 진입: {strategy['schedule']['entry_time']}"
              + (" (연속진입)" if continuous else ""))
 

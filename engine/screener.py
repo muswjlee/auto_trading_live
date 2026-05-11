@@ -16,6 +16,8 @@ _ETF_PREFIXES = (
 
 def is_etf(name: str) -> bool:
     upper = name.upper()
+    if "ETN" in upper:
+        return True
     return any(upper.startswith(p) for p in _ETF_PREFIXES)
 
 

@@ -12,7 +12,7 @@ from glob import glob
 from datetime import datetime, date
 
 from kis_api import KISApi
-from engine.monitor import load_daily_pnl
+from engine.monitor import load_daily_pnl, record_daily_balance
 from engine.notifier import send, notify_error
 
 _BASE     = os.path.dirname(os.path.abspath(__file__))
@@ -93,8 +93,12 @@ def send_total_summary(today: str):
         pnl_data = load_daily_pnl()
         bal      = api.get_balance()
         s        = bal["summary"][0] if isinstance(bal["summary"], list) else bal["summary"]
-        cash     = int(s.get("dnca_tot_amt", 0))
-        total    = int(s.get("tot_evlu_amt", 0))
+        cash         = int(s.get("dnca_tot_amt", 0))
+        total        = int(s.get("tot_evlu_amt", 0))
+        asset_change = int(s.get("asst_icdc_amt", 0))
+        buy_amt      = int(s.get("thdt_buy_amt", 0))
+        sell_amt     = int(s.get("thdt_sll_amt", 0))
+        record_daily_balance(cash, total, asset_change, buy_amt, sell_amt)
 
         total_pnl  = pnl_data.get("total_pnl", 0)
         total_cost = pnl_data.get("total_cost", 0)

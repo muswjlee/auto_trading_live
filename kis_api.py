@@ -122,7 +122,7 @@ class KISApi:
         # 요청 시장에 따라 호출할 세부 시장 코드 결정
         # 1: 코스피, 2: 코스닥, 3: ELW, 4: ETF, 5: KONEX
         if market == "0":
-            markets = ["1", "2", "3", "4", "5"]
+            markets = ["0", "1", "2", "3", "4", "5"]  # "0" 전체 통합 top30 추가
         else:
             markets = [market]
 
@@ -198,19 +198,24 @@ class KISApi:
         return True  # 모든 확인 실패 시 거래일로 간주
 
     def get_execution_strength(self, stock_code: str) -> float:
-        """당일 체결강도 조회 (inquire-ccnl의 tday_rltv 필드)"""
-        try:
-            res = requests.get(
-                f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-ccnl",
-                headers=self._headers("FHKST01010300"),
-                params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": stock_code},
-            )
-            res.raise_for_status()
-            output = res.json().get("output", [])
-            if output:
-                return float(output[0].get("tday_rltv", 0))
-        except Exception:
-            pass
+        """당일 체결강도 조회 (inquire-ccnl의 tday_rltv 필드) — 0.0 반환 시 1회 재시도"""
+        for attempt in range(2):
+            try:
+                res = requests.get(
+                    f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-ccnl",
+                    headers=self._headers("FHKST01010300"),
+                    params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": stock_code},
+                )
+                res.raise_for_status()
+                output = res.json().get("output", [])
+                if output:
+                    val = float(output[0].get("tday_rltv", 0))
+                    if val > 0:
+                        return val
+            except Exception:
+                pass
+            if attempt == 0:
+                time.sleep(0.3)
         return 0.0
 
     def get_ohlcv(self, stock_code: str, period: str = "D", count: int = 30) -> list[dict]:
