@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 _ETF_PREFIXES = (
     "KODEX", "TIGER", "ARIRANG", "KBSTAR", "HANARO", "KOSEF",
     "KINDEX", "ACE", "SOL", "FOCUS", "SMART", "TIMEFOLIO",
-    "TREX", "PLUS", "NEWTON", "RISE", "WOORI ETF",
+    "TREX", "PLUS", "NEWTON", "RISE", "WOORI ETF", "KIWOOM",
 )
 
 def is_etf(name: str) -> bool:
