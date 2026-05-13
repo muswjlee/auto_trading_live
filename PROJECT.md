@@ -1,7 +1,26 @@
-# 자동매매 시스템 (KIS API)
+# 자동매매 시스템 v3.0 (KIS API)
 
-한국투자증권 KIS Developers API 기반 자동매매 시스템.  
-현재 **모의투자 서버** 운영 중.
+한국투자증권 KIS Developers API 기반 자동매매 시스템.
+
+---
+
+## 아키텍처
+
+```
+Windows 작업 스케줄러 (MUS_Watchdog) — 매일 08:48 기동
+  └─ start_watchdog.bat
+       └─ watchdog.py               ← 감시 프로세스 (08:48~15:35)
+            ├─ telegram_bot.py      ← 텔레그램 명령 처리
+            ├─ runner.py vol_surge_0905
+            ├─ runner.py vol_surge_0910
+            ├─ runner.py vol_surge_0915
+            ├─ runner.py vol_surge_fulltime_v2
+            └─ runner.py vol_surge_fulltime_v3
+```
+
+- 전략마다 **독립 프로세스**로 runner.py가 실행됨
+- watchdog.py가 60초마다 생존 확인, 죽으면 자동 재시작 + 텔레그램 알림
+- 전략 활성화/비활성화는 JSON의 `"enabled"` 필드로 제어 (장 중에도 반영)
 
 ---
 
@@ -11,286 +30,107 @@
 auto_trading/
 │
 ├── config.py                  # API 키, 계좌번호, BASE_URL 설정
-├── kis_api.py                 # KIS API 래퍼 (토큰·시세·주문·잔고)
-├── run_trader.bat             # 작업 스케줄러 실행 진입점
-├── requirements.txt           # 패키지 의존성
+├── kis_api.py                 # KIS API 래퍼 (토큰·시세·주문·잔고·분봉)
+├── watchdog.py                # 감시 프로세스 (전략/봇 자동 재시작)
+├── start_watchdog.bat         # 작업 스케줄러 진입점
+├── launcher.py                # (구) 멀티전략 런처 — 현재 watchdog으로 대체
+├── telegram_bot.py            # 텔레그램 명령 처리 봇
+├── pnl_report.py              # 전략별 손익 리포트 출력
+├── check_balance.py           # 잔고 확인 유틸
+├── requirements.txt
 ├── .env                       # API 키 환경변수 (비공개)
-├── .env.example               # 환경변수 템플릿
+├── .env.example
 │
 ├── engine/
-│   ├── runner.py              # 메인 루프 (진입·모니터링·마감매도·결산)
-│   ├── screener.py            # 종목 스크리닝 (거래량/리서치→등락률→지표 필터)
-│   ├── monitor.py             # 포지션 관리, 익절/손절, 손익 기록
-│   ├── indicators.py          # RSI, MACD 계산
+│   ├── runner.py              # 단일 전략 실행 루프 (진입·모니터링·마감매도·결산)
+│   ├── screener.py            # 종목 스크리닝 + KODEX200 지수 방향 필터
+│   ├── monitor.py             # 포지션 관리, 익절/손절, 손익 기록, FileLock
 │   ├── notifier.py            # 텔레그램 알림
+│   ├── indicators.py          # RSI, MACD 계산
 │   └── research.py            # 네이버 증권 리서치 보고서 스크래퍼
 │
 ├── strategies/
-│   ├── vol_surge.json         # 전략 1: 거래량 급등 + 체결강도
-│   ├── value_buffett.json     # 전략 2: 버핏 가치투자
-│   ├── rsi_macd.json          # 전략 3: RSI + MACD 골든크로스
-│   └── research_morning.json  # 전략 4: 리서치 보고서 급등
+│   ├── vol_surge_0905.json        ✅ 활성 — 09:05 일반진입
+│   ├── vol_surge_0910.json        ✅ 활성 — 09:10 일반진입
+│   ├── vol_surge_0915.json        ✅ 활성 — 09:15 일반진입
+│   ├── vol_surge_fulltime_v2.json ✅ 활성 — 09:01~15:00 연속진입 (ETF 제외)
+│   ├── vol_surge_fulltime_v3.json ✅ 활성 — 09:01~15:00 연속진입 (ETF 포함)
+│   ├── vol_surge_fulltime.json    ⛔ 비활성
+│   ├── vol_surge_vwap_0905.json   ⛔ 비활성
+│   ├── vol_surge_vwap_0910.json   ⛔ 비활성
+│   ├── vol_surge_vwap_0915.json   ⛔ 비활성
+│   ├── research_morning.json      ⛔ 비활성
+│   ├── value_buffett.json         ⛔ 비활성
+│   └── rsi_macd.json              ⛔ 비활성
 │
-├── positions.json             # 런타임: 현재 보유 포지션
+├── positions.json             # 런타임: 현재 보유 포지션 (FileLock 보호)
 ├── daily_pnl.json             # 런타임: 당일 손익 기록
+├── strategy_history.json      # 전략별 누적 손익 이력
 ├── .token_cache.json          # 런타임: KIS 액세스 토큰 캐시
-└── trading.log                # 런타임: 실행 로그
-```
-
-> `strategy.py`, `trader.py`, `volume_top.py` — 초기 프로토타입 파일, 현재 미사용
-
----
-
-## 실행 흐름
-
-```
-Windows 작업 스케줄러 (월~금 09:00)
-  └─ run_trader.bat
-       └─ python -m engine.runner
-```
-
-| 시각  | 동작 |
-|-------|------|
-| 09:00 | 프로그램 시작 → 거래일 확인 (비거래일이면 즉시 종료) |
-| 09:10 | 전략 1 (vol_surge) 스크리닝 + 매수 |
-| 09:15 | 전략 4 (research_morning) 당일 리서치 종목 조회 + 매수 |
-| 10:00 | 전략 2 (value_buffett) 스크리닝 + 매수 |
-| 10:30 | 전략 3 (rsi_macd) 스크리닝 + 매수 |
-| 상시  | 30초마다 포지션 모니터링 (익절 +2% / 손절 -2%) |
-| 15:20 | 미청산 포지션 전량 시장가 강제매도 |
-| 15:30 | 일일 결산 텔레그램 발송 |
-
----
-
-## 파일별 상세 설명
-
----
-
-### `config.py` — 환경 설정
-
-`.env` 파일을 읽어 전역 상수로 제공. 모든 모듈이 이 파일에서 설정값을 임포트.
-
-| 상수 | 설명 |
-|------|------|
-| `APP_KEY` | KIS API 앱키 |
-| `APP_SECRET` | KIS API 앱시크릿 |
-| `ACCOUNT_NO` | 계좌번호 앞 8자리 |
-| `ACCOUNT_CD` | 계좌 상품코드 (기본 `"01"`) |
-| `IS_PAPER` | `True`: 모의투자 / `False`: 실투자 |
-| `BASE_URL` | IS_PAPER에 따라 자동 분기되는 API 엔드포인트 |
-| `WS_URL` | WebSocket 엔드포인트 (현재 미사용) |
-
----
-
-### `kis_api.py` — KIS API 래퍼
-
-KIS Developers REST API 전체를 감싸는 클래스. 모든 HTTP 통신은 이 파일에서만 처리.
-
-#### 인증
-
-| 메서드 | 설명 |
-|--------|------|
-| `_load_token_cache()` | 시작 시 `.token_cache.json`에서 토큰 로드 (재발급 횟수 절감) |
-| `_save_token_cache()` | 신규 발급 토큰을 파일에 저장 |
-| `_refresh_token()` | KIS OAuth2 토큰 발급 (유효기간 23시간) |
-| `token` (property) | 만료 여부 확인 후 유효한 토큰 반환 |
-| `_headers(tr_id, extra)` | API 요청 헤더 생성 (Bearer 토큰 포함) |
-
-#### 시세 조회
-
-| 메서드 | 설명 |
-|--------|------|
-| `get_price(stock_code)` | 현재가·등락률·체결강도·PER·PBR 등 조회 |
-| `get_volume_rank(top_n, market, min_price, max_price, min_volume)` | 거래량 상위 종목 조회. API 1회 한계(30개)를 코스피/코스닥/ETF 분리 호출로 우회 후 합산 정렬 |
-| `_fetch_volume_rank_page(market, ...)` | 단일 시장 거래량 30개 조회 (내부용) |
-| `get_ohlcv(stock_code, period, count)` | 일(D)/주(W)/월(M) OHLCV 조회 |
-| `is_trading_day(date)` | 거래일 확인. KIS API 실패 시 `holidays` 라이브러리로 fallback, 근로자의 날(5/1) 수동 처리 |
-
-#### 잔고 조회
-
-| 메서드 | 설명 |
-|--------|------|
-| `get_balance()` | 보유 종목(`output1`)·총평가액(`output2`) 조회. 500 에러 시 최대 3회 재시도 (1초, 2초 간격) |
-| `get_cash()` | `get_balance()`에서 예수금(`dnca_tot_amt`)만 추출해 `int` 반환 |
-
-#### 주문
-
-| 메서드 | 설명 |
-|--------|------|
-| `_order(stock_code, qty, price, side)` | 매수/매도 공통 주문 처리. `price=0` 이면 시장가(`ORD_DVSN=01`), 아니면 지정가(`00`) |
-| `buy(stock_code, qty, price=0)` | 매수 주문 |
-| `sell(stock_code, qty, price=0)` | 매도 주문 |
-| `get_pending_orders()` | 미체결 주문 목록 조회 |
-| `cancel_order(order_no, stock_code, qty)` | 주문 취소 |
-
----
-
-### `engine/runner.py` — 메인 루프
-
-프로그램의 진입점. `while True` 루프로 시간대별 동작을 순차 처리.
-
-#### 함수
-
-| 함수 | 설명 |
-|------|------|
-| `load_strategy(strategy_id)` | 특정 전략 JSON 파일 로드 |
-| `load_all_enabled_strategies()` | `strategies/` 폴더에서 `enabled: true`인 전략 전체 로드 |
-| `execute_entry(api, strategy)` | 스크리닝 결과 종목 매수 실행. 잔고 확인 후 매수 주문. **실패 시 최대 3회 재시도** (1초, 2초 간격) |
-| `run(strategy_id)` | 메인 루프. 전략별 entry_time 기준 매수, 30초마다 포지션 모니터링, 15:20 강제매도, 15:30 결산 |
-
-#### 루프 내 주요 처리
-
-- **자정 초기화:** `t < 900`이고 새 날짜이면 `entry_done` 초기화 (다음날 재매수 허용)
-- **전략별 매수 window:** `entry_t <= t < entry_t + 10` (10분 내 1회만 실행, `entry_done`으로 중복 방지)
-- **포지션 모니터링:** `910 <= t < 1520` 구간에서 `check_and_exit(api, strategies)` 호출
-- **15:30 결산:** `get_balance()` 실패 시 텔레그램 오류 알림, `summary_sent_day`는 미설정으로 다음 루프에서 재시도
-
----
-
-### `engine/screener.py` — 종목 스크리닝
-
-전략 설정에 따라 매수 후보 종목을 선별해 반환. `universe.type` 값으로 유니버스 종류 분기.
-
-#### 함수
-
-| 함수 | 설명 |
-|------|------|
-| `get_execution_strength(price_info)` | 체결강도 계산 (`매수체결수량 / 매도체결수량 × 100`). 모의투자에서는 항상 0.0 |
-| `is_upper_limit(price_info)` | 상한가 여부 (`현재가 >= 상한가`) |
-| `_build_volume_candidates(api, univ, entry)` | 거래량 상위 종목 조회 후 등락률 필터 (기존 전략 1·2·3) |
-| `_build_research_candidates(api, univ, entry)` | 당일 리서치 보고서 종목 조회 후 등락률·가격 필터 (전략 4) |
-| `screen(api, strategy)` | 스크리닝 메인 함수. universe.type에 따라 유니버스 빌더 분기 후 공통 필터 적용 |
-
-#### `screen()` 필터링 순서
-
-1. **유니버스 결정**
-   - `type: "research"` → `_build_research_candidates()` — 당일 리서치 보고서 종목
-   - 그 외 → `_build_volume_candidates()` — 거래량 상위 N개
-2. 등락률 범위 필터 (`min_change_rate` ~ `max_change_rate`)
-3. 종목별 현재가 조회 후:
-   - PER/PBR 필터 (전략에 설정된 경우)
-   - RSI/MACD 필터 (전략에 설정된 경우)
-   - 체결강도 계산
-4. 체결강도 내림차순 정렬
-5. 상한가 종목 제외 후 상위 `max_stocks`개 선택 (제외된 종목은 다음 순위로 대체)
-
----
-
-### `engine/research.py` — 리서치 보고서 스크래퍼
-
-네이버 증권 리서치 페이지(`finance.naver.com/research/company_list.naver`)에서 당일 보고서 종목을 수집.
-
-| 함수 | 설명 |
-|------|------|
-| `_parse_page(html, today_str)` | HTML에서 오늘 날짜(`YY.MM.DD`) 행만 파싱. 종목 링크에서 코드 직접 추출 |
-| `get_today_research(max_pages)` | 최대 `max_pages`페이지 순회해 당일 보고서 전체 수집. 중복 코드 제거 후 반환 |
-
-**반환 필드:** `code` (종목코드), `name` (종목명), `firm` (증권사), `title` (보고서 제목)
-
----
-
-### `engine/monitor.py` — 포지션 모니터링
-
-보유 포지션의 실시간 손익을 추적하고 익절/손절 조건 충족 시 매도.
-
-#### 포지션 파일 관리
-
-| 함수 | 설명 |
-|------|------|
-| `load_positions()` | `positions.json` 로드. 파일 없으면 `{}` 반환 |
-| `save_positions(positions)` | `positions.json`에 저장 |
-| `add_position(code, name, buy_price, qty, strategy_id)` | 매수 완료 후 포지션 등록 |
-| `remove_position(code)` | 매도 완료 후 포지션 제거 |
-
-#### 손익 기록
-
-| 함수 | 설명 |
-|------|------|
-| `record_trade(name, code, qty, buy_price, sell_price, reason)` | 매도 시 `daily_pnl.json`에 손익 누적. 날짜 바뀌면 자동 초기화 |
-| `load_daily_pnl()` | 당일 손익 데이터 로드. 날짜 불일치 시 빈 데이터 반환 |
-
-#### 모니터링
-
-| 함수 | 설명 |
-|------|------|
-| `check_and_exit(api, strategies)` | 모든 포지션 순회. 포지션의 `strategy_id`로 해당 전략의 exit 조건 매칭 후 익절/손절 판단. 조건 충족 시 시장가 매도 → 알림 → 기록 → 포지션 제거 |
-
----
-
-### `engine/indicators.py` — 기술적 지표
-
-외부 라이브러리 없이 순수 Python으로 구현.
-
-| 함수 | 설명 |
-|------|------|
-| `_ema(data, period)` | 지수이동평균(EMA) 계산 (내부용) |
-| `rsi(closes, period=14)` | RSI 계산. 데이터 부족 시 중립값 50.0 반환 |
-| `macd(closes, fast=12, slow=26, signal=9)` | MACD 라인·시그널 라인·히스토그램·골든크로스 여부 반환. 골든크로스: 전봉 `MACD ≤ Signal` → 현봉 `MACD > Signal` |
-
----
-
-### `engine/notifier.py` — 텔레그램 알림
-
-텔레그램 Bot API로 실시간 알림 발송. 전송 실패 시 로그만 남기고 프로그램 계속 실행.
-
-| 함수 | 발송 시점 | 내용 |
-|------|-----------|------|
-| `send(message)` | 직접 호출 (결산 요약 등) | HTML 파싱 모드 지원 |
-| `notify_buy(name, code, qty, price)` | 매수 체결 | 종목명·수량·금액 |
-| `notify_sell(name, code, qty, buy_price, current, reason)` | 익절/손절/강제매도 | 매입가·현재가·수익률·손익금액 |
-| `notify_no_signal()` | 스크리닝 결과 없음 | 고정 메시지 |
-| `notify_error(message)` | 오류 발생 | 오류 내용 |
-
----
-
-## 전략 설정 구조 (`strategies/*.json`)
-
-```jsonc
-{
-  "id": "vol_surge",
-  "name": "전략 이름",
-  "enabled": true,                      // false 로 비활성화
-  "schedule": {
-    "entry_time": "09:10",              // 매수 실행 시각
-    "monitor_interval_sec": 30          // 포지션 모니터링 주기(초)
-  },
-  "universe": {
-    "market": "0",                      // 0: 전체, 1: 코스피, 2: 코스닥
-    "top_volume": 100,                  // 거래량 상위 N개
-    "min_price": 1000,
-    "max_price": 200000
-  },
-  "entry": {
-    "min_change_rate": 5.0,             // 등락률 하한 (%)
-    "max_change_rate": 10.0,            // 등락률 상한 (%)
-    "min_per": 5.0,                     // PER 하한 (선택)
-    "max_per": 15.0,                    // PER 상한 (선택)
-    "min_pbr": 0.3,                     // PBR 하한 (선택)
-    "max_pbr": 1.5,                     // PBR 상한 (선택)
-    "indicators": {                     // 기술적 지표 (선택)
-      "rsi":  {"period": 14, "oversold": 35},
-      "macd": {"fast": 12, "slow": 26, "signal": 9}
-    },
-    "max_stocks": 3,                    // 최대 매수 종목 수
-    "amount_per_stock": 1000000         // 종목당 투자금 (원)
-  },
-  "exit": {
-    "take_profit": 2.0,                 // 익절 기준 (%)
-    "stop_loss": -2.0                   // 손절 기준 (%)
-  }
-}
+├── watchdog.log               # 워치독 실행 로그
+└── trading_<sid>.log          # 전략별 실행 로그
 ```
 
 ---
 
 ## 활성 전략 현황
 
-| # | 전략 | 진입 시각 | 유니버스 | 등락률 | 추가 필터 | 최대 종목 | 투자금/종목 |
-|---|------|-----------|---------|--------|-----------|-----------|-------------|
-| 1 | vol_surge | 09:10 | 거래량 상위 | +5% ~ +10% | — | 3개 | 100만원 |
-| 4 | research_morning | 09:15 | 당일 리서치 보고서 | +5% ~ +10% | — | 3개 | 30만원 |
-| 2 | value_buffett | 10:00 | 거래량 상위 | -5% ~ +3% | PER 5~15, PBR 0.3~1.5 | 3개 | 100만원 |
-| 3 | rsi_macd | 10:30 | 거래량 상위 | -10% ~ +10% | RSI < 35, MACD 골든크로스 | 3개 | 100만원 |
+| 전략 ID | 진입 방식 | 진입 시간 | 등락률 | 체결강도 | 익절 | 손절 | ETF | ETN |
+|---------|-----------|-----------|--------|----------|------|------|-----|-----|
+| vol_surge_0905 | 일반 1회 | 09:05 | +5%~+10% | ≥120 (3분봉) | +2% | -1% | 제외 | 제외 |
+| vol_surge_0910 | 일반 1회 | 09:10 | +5%~+10% | ≥120 (3분봉) | +2% | -1% | 제외 | 제외 |
+| vol_surge_0915 | 일반 1회 | 09:15 | +5%~+10% | ≥120 (3분봉) | +2% | -1% | 제외 | 제외 |
+| vol_surge_fulltime_v2 | 연속 반복 | 09:01~15:00 | +2%~+15% | ≥120 (즉시) | +1% | -1% | 제외 | 제외 |
+| vol_surge_fulltime_v3 | 연속 반복 | 09:01~15:00 | +2%~+15% | ≥120 (즉시) | +1% | -1% | 포함 | 제외 |
+
+- **종목당 투자금**: 당일 예수금의 10% (시작 시 동적 계산)
+- **전략 간 중복 방지**: 같은 종목을 두 전략이 동시에 보유/예약 불가 (`reserve_or_skip`)
+
+---
+
+## 매수 실행 흐름 (execute_entry)
+
+```
+screen() — 종목 스크리닝
+    ↓
+종목별 반복:
+    ├─ reserve_or_skip() — 타 전략 중복 예약 확인
+    ├─ 잔고 확인
+    ├─ 체결강도 재확인 (매수 직전, min_execution_strength 있을 때)
+    ├─ KODEX200 3분봉 상승 확인 (매수 직전)  ← v3.0 신규
+    └─ api.buy() — 시장가 매수 (실패 시 최대 3회 재시도)
+```
+
+### 일반 전략 vs 연속진입 전략의 KODEX200 필터 차이
+
+| | 일반 전략 (0905/0910/0915) | 연속진입 전략 (v2/v3) |
+|---|---|---|
+| 루프 레벨 체크 | ✅ 진입 시간에 1회 체크, 하락이면 당일 전체 중단 | ❌ 없음 |
+| 매수 직전 체크 | ✅ 종목별 체크 (하락이면 해당 종목 스킵) | ✅ 종목별 체크 (하락이면 해당 종목 스킵) |
+| 하락 시 | 당일 매수 없음 | 이번 사이클 스킵, 다음 사이클에 재시도 |
+
+---
+
+## 스크리닝 필터 순서 (screener.py)
+
+1. 거래량 상위 종목 조회
+2. ETN 무조건 제외 (종목명에 "ETN" 포함 시)
+3. ETF 조건부 제외 (`exclude_etf: true` 전략만)
+4. 등락률 범위 필터 (`min_change_rate` ~ `max_change_rate`)
+5. 상한가 종목 제외
+6. 체결강도 기준 정렬 → 상위 1개 선택
+7. VWAP 비율 계산 (기록용)
+
+---
+
+## 손익 계산 기준
+
+| 항목 | 내용 |
+|------|------|
+| 매도세 (KOSPI) | 0.03% (증권거래세) + 0.15% (농어촌특별세) = 0.18% |
+| 매도세 (KOSDAQ) | 0.18% |
+| 수수료 | 약 0.015% (양방향 합산) |
+| 순손익 | 매도금액 - 매수금액 - 세금 - 수수료 |
 
 ---
 
@@ -300,11 +140,15 @@ KIS Developers REST API 전체를 감싸는 클래스. 모든 HTTP 통신은 이
 
 ```json
 {
-  "005930": {
+  "005930_vol_surge_0905": {
+    "code": "005930",
     "name": "삼성전자",
     "buy_price": 68000,
     "qty": 14,
-    "strategy_id": "vol_surge"
+    "strategy_id": "vol_surge_0905",
+    "execution_strength": 135.2,
+    "change_rate": 6.5,
+    "vwap_ratio": 1.012
   }
 }
 ```
@@ -313,66 +157,31 @@ KIS Developers REST API 전체를 감싸는 클래스. 모든 HTTP 통신은 이
 
 ```json
 {
-  "date": "2026-04-30",
-  "total_pnl": 69800,
+  "date": "2026-05-13",
   "trades": [
     {
       "name": "채비", "code": "0011T0", "qty": 41,
       "buy_price": 24100, "sell_price": 25200,
-      "pnl": 45100, "reason": "익절"
+      "gross_pnl": 45100, "cost": 4100, "pnl": 41000,
+      "reason": "익절", "strategy_id": "vol_surge_0905"
     }
   ]
 }
 ```
 
-### `.token_cache.json`
-
-```json
-{
-  "token": "eyJ...",
-  "expires": "2026-05-03T08:00:00"
-}
-```
-
----
-
-## 환경 설정
-
-### `.env` (필수)
-
-```env
-KIS_APP_KEY=앱키
-KIS_APP_SECRET=앱시크릿
-KIS_ACCOUNT_NO=계좌번호_앞8자리
-KIS_ACCOUNT_CD=01
-```
-
-### `config.py` 직접 수정 항목
-
-```python
-IS_PAPER = True   # 실투자 전환 시 False 로 변경
-```
-
----
-
-## 모의투자 환경 특이사항
-
-| 항목 | 내용 |
-|------|------|
-| 체결강도 | 항상 0.0 반환 (서버 제한) → 정렬 기준 무의미, 정상 동작 |
-| chk-holiday API | 모의투자 미지원 → `holidays` 라이브러리로 대체, 근로자의 날 수동 처리 |
-| 주문번호(odno) | None 반환되는 경우 있음, 정상 |
-| 서버 500 에러 | 9:10 장 초반 간헐적 발생 → 매수/잔고 조회 모두 3회 재시도로 대응 |
-| BASE_URL | `openapivts.koreainvestment.com:29443` |
-
 ---
 
 ## 작업 스케줄러 설정
 
-- **작업명:** `KIS_AutoTrader`
-- **실행 명령:** `cmd.exe /c "...\auto_trading\run_trader.bat"`
-- **실행 조건:** 월~금 09:00, 로그인 상태 필요
-- **주의:** `Stop On Battery Mode` ON → **충전기 반드시 연결**
+| 작업명 | 상태 | 실행 시각 | 역할 |
+|--------|------|-----------|------|
+| MUS_Watchdog | ✅ 활성 | 매일 08:48 | 워치독 + 전략 프로세스 관리 |
+| MUS_AutoTrading | ⛔ 비활성 | — | (구) 단일 launcher |
+| MUS_TelegramBot | ⛔ 비활성 | — | (구) 단일 봇 실행 |
+
+- 실행 계정: S4U (로그인 없이 백그라운드 실행)
+- 실행 시간 제한: 8시간
+- 실패 시 재시작: 1분 간격, 최대 3회
 
 ---
 
@@ -381,9 +190,19 @@ IS_PAPER = True   # 실투자 전환 시 False 로 변경
 ```
 requests>=2.31.0
 python-dotenv>=1.0.0
-websocket-client>=1.7.0
 holidays>=0.46
 beautifulsoup4>=4.12.0
+filelock>=3.0.0
 ```
 
 설치: `pip install -r requirements.txt`
+
+---
+
+## 변경 이력
+
+| 버전 | 주요 변경 |
+|------|-----------|
+| v1.0 | 단일 runner.py, 다전략 순차 실행 |
+| v2.0 | 멀티프로세스 (launcher.py), 전략별 독립 runner, FileLock 도입 |
+| v3.0 | watchdog.py 도입, ETN 별도 분리 제외, KODEX200 3분봉 지수 필터, 매수 직전 체결강도/지수 재확인, 장마감 강제매도 5회 재시도, 세금율 수정(0.18%) |

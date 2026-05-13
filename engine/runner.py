@@ -92,6 +92,12 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
                     continue
                 log.info(f"[매수 직전 재확인] {name}({code}) 체결강도 {fresh_strength} ✓")
 
+            # 매수 직전 KODEX200 3분봉 상승 확인
+            if not is_market_rising(api, minutes=3):
+                log.info(f"[매수 취소] {name}({code}) KODEX200 3분봉 하락 추세 → 스킵")
+                cancel_reservation(code, sid)
+                continue
+
             last_err = None
             bought = False
             for attempt in range(3):
@@ -313,7 +319,7 @@ def run(strategy_id: str):
             continue
 
         if continuous:
-            # 연속진입(v2, v3): 지수 방향 체크 없이 포지션 없을 때마다 매수 시도
+            # 연속진입(v2, v3): 포지션 없을 때마다 매수 시도 (지수 방향은 매수 직전 확인)
             if entry_t <= t < entry_end_t:
                 my_pos = {k: v for k, v in load_positions().items()
                           if v.get("strategy_id") == sid}
