@@ -1,5 +1,6 @@
 """텔레그램 알림 전송"""
 
+import os
 import requests
 import logging
 
@@ -8,12 +9,14 @@ log = logging.getLogger(__name__)
 BOT_TOKEN = "8527515865:AAGgyyYvhWSNLXVz3P6-pVqJPWXP-jAhDl0"
 CHAT_ID   = "8221120885"
 
+_MODE_TAG = "[모의] " if os.getenv("KIS_MODE", "paper") == "paper" else ""
+
 
 def send(message: str):
     try:
         requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"},
+            json={"chat_id": CHAT_ID, "text": _MODE_TAG + message, "parse_mode": "HTML"},
             timeout=5,
         )
     except Exception as e:

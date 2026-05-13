@@ -23,7 +23,8 @@ LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
 
 def _setup_logger(strategy_id: str) -> logging.Logger:
-    log_file = os.path.join(LOG_DIR, f"trading_{strategy_id}.log")
+    mode = os.getenv("KIS_MODE", "paper")
+    log_file = os.path.join(LOG_DIR, f"trading_{strategy_id}_{mode}.log")
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
     # 루트 로거에 핸들러 추가 → screener/monitor/kis_api 로그도 전략 파일에 기록됨

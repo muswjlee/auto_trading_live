@@ -5,9 +5,9 @@ import json
 import os
 import requests
 from datetime import datetime, timedelta
-from config import APP_KEY, APP_SECRET, ACCOUNT_NO, ACCOUNT_CD, BASE_URL, IS_PAPER
+from config import APP_KEY, APP_SECRET, ACCOUNT_NO, ACCOUNT_CD, BASE_URL, IS_PAPER, MODE
 
-_TOKEN_CACHE_FILE = os.path.join(os.path.dirname(__file__), ".token_cache.json")
+_TOKEN_CACHE_FILE = os.path.join(os.path.dirname(__file__), f".token_cache_{MODE}.json")
 
 
 class KISApi:

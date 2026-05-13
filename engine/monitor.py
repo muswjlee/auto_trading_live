@@ -18,10 +18,11 @@ from kis_api import KISApi
 from engine.notifier import notify_sell
 
 log = logging.getLogger(__name__)
-POSITION_FILE   = os.path.join(os.path.dirname(__file__), "..", "positions.json")
-PNL_FILE        = os.path.join(os.path.dirname(__file__), "..", "daily_pnl.json")
-HISTORY_FILE    = os.path.join(os.path.dirname(__file__), "..", "strategy_history.json")
-BALANCE_FILE    = os.path.join(os.path.dirname(__file__), "..", "balance_history.json")
+_MODE         = os.getenv("KIS_MODE", "paper")
+POSITION_FILE = os.path.join(os.path.dirname(__file__), "..", f"positions_{_MODE}.json")
+PNL_FILE      = os.path.join(os.path.dirname(__file__), "..", f"daily_pnl_{_MODE}.json")
+HISTORY_FILE  = os.path.join(os.path.dirname(__file__), "..", f"strategy_history_{_MODE}.json")
+BALANCE_FILE  = os.path.join(os.path.dirname(__file__), "..", f"balance_history_{_MODE}.json")
 
 _POS_LOCK = FileLock(POSITION_FILE + ".lock")
 _PNL_LOCK = FileLock(PNL_FILE + ".lock")

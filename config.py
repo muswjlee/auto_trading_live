@@ -1,28 +1,29 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+MODE = os.getenv("KIS_MODE", "paper")
 
-# KIS API 설정
-APP_KEY = os.getenv("KIS_APP_KEY")
+_env_file = os.path.join(os.path.dirname(__file__), f".env.{MODE}")
+load_dotenv(_env_file)
+
+APP_KEY    = os.getenv("KIS_APP_KEY")
 APP_SECRET = os.getenv("KIS_APP_SECRET")
 ACCOUNT_NO = os.getenv("KIS_ACCOUNT_NO")
-ACCOUNT_CD = os.getenv("KIS_ACCOUNT_CD", "01")  # 계좌 상품코드
+ACCOUNT_CD = os.getenv("KIS_ACCOUNT_CD", "01")
 
 if not all([APP_KEY, APP_SECRET, ACCOUNT_NO]):
-    raise EnvironmentError("KIS API 환경변수가 설정되지 않았습니다. .env 파일을 확인하세요.")
+    raise EnvironmentError(f".env.{MODE} 파일에 KIS API 환경변수가 없습니다.")
 
-# 모의투자: True / 실투자: False
-IS_PAPER = os.getenv("KIS_IS_PAPER", "true").lower() == "true"
+IS_PAPER = MODE == "paper"
 
 BASE_URL = (
-    "https://openapivts.koreainvestment.com:29443"  # 모의투자
+    "https://openapivts.koreainvestment.com:29443"
     if IS_PAPER else
-    "https://openapi.koreainvestment.com:9443"       # 실투자
+    "https://openapi.koreainvestment.com:9443"
 )
 
 WS_URL = (
-    "ws://ops.koreainvestment.com:31000"   # 모의투자 WebSocket
+    "ws://ops.koreainvestment.com:31000"
     if IS_PAPER else
-    "ws://ops.koreainvestment.com:21000"   # 실투자 WebSocket
+    "ws://ops.koreainvestment.com:21000"
 )
