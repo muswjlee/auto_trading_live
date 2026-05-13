@@ -13,7 +13,7 @@
                  },
     "entry":  {
                   "min_change_rate":  3.0,
-                  "max_change_rate":  5.0,
+                  "max_change_rate":  15.0,
                   "sort_by":  "execution_strength",
                   "max_stocks":  3,
                   "amount_per_stock":  500000,

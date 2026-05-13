@@ -8,11 +8,11 @@
   },
   "universe": {
     "market": "0",
-    "top_volume": 100,
+    "top_volume": 100
   },
   "entry": {
     "min_change_rate": 3.0,
-    "max_change_rate": 5.0,
+    "max_change_rate": 15.0,
     "indicators": {
       "rsi":  {"period": 14, "oversold": 35},
       "macd": {"fast": 12, "slow": 26, "signal": 9}
@@ -27,4 +27,3 @@
     "stop_loss": -2.0
   }
 }
-

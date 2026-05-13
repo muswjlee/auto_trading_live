@@ -9,7 +9,7 @@
     "poll_interval_sec": 1
   },
   "universe": {
-    "top_n": 10,
+    "top_n": 10
   },
   "entry": {
     "consecutive_up_ticks": 5,
@@ -27,4 +27,3 @@
     "max_daily_loss_pct": -1.0
   }
 }
-

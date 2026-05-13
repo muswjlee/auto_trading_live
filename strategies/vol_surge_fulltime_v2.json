@@ -15,7 +15,7 @@
   },
   "entry": {
     "min_change_rate": 3.0,
-    "max_change_rate": 5.0,
+    "max_change_rate": 15.0,
     "min_execution_strength": 120,
     "instant_execution_strength": true,
     "sort_by": "execution_strength",
