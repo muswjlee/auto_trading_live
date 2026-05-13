@@ -218,8 +218,52 @@ class KISApi:
                 time.sleep(0.3)
         return 0.0
 
+    def get_instant_execution_strength(self, stock_code: str) -> float:
+        """순간 체결강도: 최근 30틱 기준 매수/매도 체결량 비율
+        - 가격 상승 틱 → 매수 체결, 하락 틱 → 매도 체결 (Lee-Ready 방식)
+        - 동일 가격은 직전 방향 유지
+        """
+        for attempt in range(2):
+            try:
+                res = requests.get(
+                    f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-ccnl",
+                    headers=self._headers("FHKST01010300"),
+                    params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": stock_code},
+                )
+                res.raise_for_status()
+                ticks = res.json().get("output", [])
+                if not ticks:
+                    continue
+
+                buy_vol = sell_vol = 0
+                last_dir = None
+                # ticks[0]이 최신, ticks[-1]이 가장 오래됨
+                for i in range(len(ticks)):
+                    price = int(ticks[i].get("stck_prpr", 0))
+                    vol   = int(ticks[i].get("cntg_vol", 0))
+                    prev  = int(ticks[i + 1].get("stck_prpr", price)) if i < len(ticks) - 1 else price
+                    if price > prev:
+                        last_dir = "buy"
+                    elif price < prev:
+                        last_dir = "sell"
+                    if last_dir == "buy":
+                        buy_vol += vol
+                    elif last_dir == "sell":
+                        sell_vol += vol
+
+                if sell_vol == 0:
+                    return 999.9 if buy_vol > 0 else 0.0
+                return round(buy_vol / sell_vol * 100, 2)
+            except Exception:
+                pass
+            if attempt == 0:
+                time.sleep(0.3)
+        return 0.0
+
     def get_ohlcv(self, stock_code: str, period: str = "D", count: int = 30) -> list[dict]:
-        """일/주/월 OHLCV 조회 (period: D/W/M)"""
+        """일/주/월 OHLCV 조회 (period: D/W/M) — count만큼 확보하기 위해 시작일 자동 계산"""
+        # 주말·공휴일 감안해 count * 2 캘린더일 이전부터 조회
+        start = (datetime.now() - timedelta(days=count * 2)).strftime("%Y%m%d")
         res = requests.get(
             f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-price",
             headers=self._headers("FHKST01010400"),
@@ -228,10 +272,27 @@ class KISApi:
                 "FID_INPUT_ISCD": stock_code,
                 "FID_PERIOD_DIV_CODE": period,
                 "FID_ORG_ADJ_PRC": "0",
+                "FID_INPUT_DATE_1": start,
             },
         )
         res.raise_for_status()
         return res.json()["output"][:count]
+
+    def get_minute_candles(self, stock_code: str, count: int = 10) -> list[dict]:
+        """1분봉 조회 — 최신순 반환 (output2)"""
+        now = datetime.now().strftime("%H%M%S")
+        res = requests.get(
+            f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
+            headers=self._headers("FHKST03010200"),
+            params={
+                "FID_COND_MRKT_DIV_CODE": "J",
+                "FID_INPUT_ISCD": stock_code,
+                "FID_INPUT_HOUR_1": now,
+                "FID_PW_DATA_INCU_YN": "N",
+            },
+        )
+        res.raise_for_status()
+        return res.json().get("output2", [])[:count]
 
     # ── 잔고 조회 ──────────────────────────────────────────────────────────
 

@@ -3,10 +3,10 @@
 +2% 익절 / -2% 손절
 """
 
-# 거래 부대비용 (한국투자증권 KOSPI 기준)
+# 거래 부대비용 (KOSPI/KOSDAQ 공통)
 BUY_FEE_RATE  = 0.00015   # 매수 수수료 0.015%
 SELL_FEE_RATE = 0.00015   # 매도 수수료 0.015%
-SELL_TAX_RATE = 0.0015    # 매도 세금  0.15% (농어촌특별세)
+SELL_TAX_RATE = 0.0018    # 매도 세금  0.18% (증권거래세 0.03% + 농어촌특별세 0.15%)
 
 import json
 import os
@@ -31,11 +31,38 @@ _PNL_LOCK = FileLock(PNL_FILE + ".lock")
 
 def load_positions() -> dict:
     with _POS_LOCK:
+        for _ in range(3):
+            try:
+                with open(POSITION_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except PermissionError:
+                time.sleep(0.2)
+            except (FileNotFoundError, json.JSONDecodeError):
+                return {}
+        return {}
+
+
+def reserve_or_skip(code: str, strategy_id: str) -> bool:
+    """다른 전략이 보유/예약 중이면 False, 아니면 즉시 예약 후 True 반환 (원자적)"""
+    pos_key = f"{code}_{strategy_id}"
+    with _POS_LOCK:
         try:
             with open(POSITION_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                positions = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
-            return {}
+            positions = {}
+        held = {v["code"] for v in positions.values()}
+        if code in held:
+            return False
+        positions[pos_key] = {"code": code, "strategy_id": strategy_id, "_reserved": True}
+        with open(POSITION_FILE, "w", encoding="utf-8") as f:
+            json.dump(positions, f, ensure_ascii=False, indent=2)
+    return True
+
+
+def cancel_reservation(code: str, strategy_id: str):
+    """매수 실패 시 예약 항목 제거"""
+    remove_position(f"{code}_{strategy_id}")
 
 
 def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: str,
@@ -282,15 +309,17 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
             log.error(f"[매도 실패] {name}({code}): 잔고 확인 오류 {e2}")
 
     if sold:
-        notify_sell(name, code, qty, buy_price, current, reason, sid)
         try:
-            record_trade(name, code, qty, buy_price, current, reason, sid,
-                         pos.get("execution_strength", 0.0),
-                         pos.get("change_rate", 0.0),
-                         pos.get("vwap_ratio", 0.0))
-        except Exception as e:
-            log.error(f"[손익 기록 실패] {name}({code}): {e}")
-        remove_position(pos_key)
+            notify_sell(name, code, qty, buy_price, current, reason, sid)
+            try:
+                record_trade(name, code, qty, buy_price, current, reason, sid,
+                             pos.get("execution_strength", 0.0),
+                             pos.get("change_rate", 0.0),
+                             pos.get("vwap_ratio", 0.0))
+            except Exception as e:
+                log.error(f"[손익 기록 실패] {name}({code}): {e}")
+        finally:
+            remove_position(pos_key)
 
     return sold
 

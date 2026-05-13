@@ -11,10 +11,11 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kis_api import KISApi
-from engine.screener import screen
+from engine.screener import screen, is_market_rising
 from engine.monitor import (
     add_position, check_and_exit, load_positions,
     remove_position, record_trade, load_daily_pnl,
+    reserve_or_skip, cancel_reservation,
 )
 from engine.notifier import notify_buy, notify_no_signal, notify_error, notify_sell, send
 
@@ -57,12 +58,19 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
             notify_no_signal(strategy["name"])
         return
 
-    amount = strategy["entry"]["amount_per_stock"]
+    amount   = strategy["entry"]["amount_per_stock"]
+    sid      = strategy["id"]
+    reserved = 0
     for stock in selected:
         code  = stock["code"]
         name  = stock["name"]
         price = stock["price"]
         qty   = max(1, amount // price)
+
+        # 전략 간 중복 방지: 원자적 확인+예약
+        if not reserve_or_skip(code, sid):
+            log.info(f"[중복 방지] {name}({code}) 타 전략 보유/예약 중 → 스킵")
+            continue
 
         try:
             cash = api.get_cash()
@@ -71,6 +79,18 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
                 log.warning(msg)
                 notify_error(msg)
                 continue
+
+            # 매수 직전 체결강도 재확인 — 스크리닝 이후 모멘텀 소진 여부 체크
+            min_strength = strategy["entry"].get("min_execution_strength")
+            instant = strategy["entry"].get("instant_execution_strength", False)
+            if min_strength is not None:
+                from engine.screener import get_execution_strength
+                fresh_strength = get_execution_strength(api, code, instant=instant)
+                if fresh_strength < min_strength:
+                    log.info(f"[매수 취소] {name}({code}) 재확인 체결강도 {fresh_strength} < {min_strength} → 모멘텀 소진")
+                    cancel_reservation(code, sid)
+                    continue
+                log.info(f"[매수 직전 재확인] {name}({code}) 체결강도 {fresh_strength} ✓")
 
             last_err = None
             bought = False
@@ -108,10 +128,12 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
             if not bought:
                 log.error(f"[매수 오류] {name}({code}): {last_err}")
                 notify_error(f"매수 실패 {name}({code}): {last_err}")
+                cancel_reservation(code, sid)
             time.sleep(0.3)
         except Exception as e:
             log.error(f"[매수 오류] {name}({code}): {e}")
             notify_error(f"매수 실패 {name}({code}): {e}")
+            cancel_reservation(code, sid)
 
 
 # ── 강제매도 (자신의 전략 포지션만) ──────────────────────────────────────
@@ -128,34 +150,42 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
     log.info(f"[{sid}] === 15:20 장마감 강제매도 시작 ===")
     for pos_key, pos in list(my_pos.items()):
         code = pos.get("code") or pos_key.split("_")[0]
-        try:
-            price_info = api.get_price(code)
-            current    = int(price_info["stck_prpr"])
-            sold = False
+        sold = False
+        last_err = None
+        for attempt in range(5):
             try:
-                api.sell(code, pos["qty"])
-                sold = True
-            except Exception as e:
-                err = str(e)
-                if "잔고내역이 없습니다" in err:
-                    log.warning(f"[장마감 강제매도] {pos['name']}({code}) 이미 매도됨 → 포지션만 제거")
-                    sold = True
-                else:
-                    raise
-            if sold:
-                notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", strategy["name"])
+                price_info = api.get_price(code)
+                current    = int(price_info["stck_prpr"])
                 try:
-                    record_trade(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", sid,
-                                 pos.get("execution_strength", 0.0),
-                                 pos.get("change_rate", 0.0),
-                                 pos.get("vwap_ratio", 0.0))
+                    api.sell(code, pos["qty"])
+                    sold = True
                 except Exception as e:
-                    log.error(f"[손익 기록 실패] {pos['name']}({code}): {e}")
-                remove_position(pos_key)
-                log.info(f"[장마감 강제매도] {pos['name']}({code}) 완료")
-        except Exception as e:
-            log.error(f"[장마감 강제매도 오류] {pos_key}: {e}")
-            notify_error(f"장마감 강제매도 실패 {pos['name']}({code}): {e}")
+                    if "잔고내역이 없습니다" in str(e):
+                        log.warning(f"[장마감 강제매도] {pos['name']}({code}) 이미 매도됨 → 포지션만 제거")
+                        sold = True
+                    else:
+                        raise
+                if sold:
+                    try:
+                        notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", strategy["name"])
+                        try:
+                            record_trade(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", sid,
+                                         pos.get("execution_strength", 0.0),
+                                         pos.get("change_rate", 0.0),
+                                         pos.get("vwap_ratio", 0.0))
+                        except Exception as e:
+                            log.error(f"[손익 기록 실패] {pos['name']}({code}): {e}")
+                    finally:
+                        remove_position(pos_key)
+                        log.info(f"[장마감 강제매도] {pos['name']}({code}) 완료")
+                break
+            except Exception as e:
+                last_err = e
+                log.warning(f"[장마감 강제매도 재시도 {attempt+1}/5] {pos['name']}({code}): {e}")
+                time.sleep(3)
+        if not sold and last_err:
+            log.error(f"[장마감 강제매도 최종 실패] {pos_key}: {last_err}")
+            notify_error(f"장마감 강제매도 실패 {pos['name']}({code}): {last_err}")
 
 
 # ── 전략별 미니 결산 ──────────────────────────────────────────────────────
@@ -283,7 +313,7 @@ def run(strategy_id: str):
             continue
 
         if continuous:
-            # 연속진입: 09:01 ~ entry_end_t 동안 포지션 없을 때마다 매수 시도
+            # 연속진입(v2, v3): 지수 방향 체크 없이 포지션 없을 때마다 매수 시도
             if entry_t <= t < entry_end_t:
                 my_pos = {k: v for k, v in load_positions().items()
                           if v.get("strategy_id") == sid}
@@ -291,11 +321,15 @@ def run(strategy_id: str):
                     log.info(f"=== [{sid}] 매수 시도 (연속진입) ===")
                     execute_entry(api, strategy, log, suppress_no_signal=True)
         else:
-            # 일반: 진입 시간대 1회 매수
+            # 일반(0905/0910/0915): 진입 시간 도달 시 KODEX200 3분봉 확인 후 1회 매수
             if not entry_done and entry_t <= t < entry_t + 10:
-                log.info(f"=== [{sid}] 매수 실행 ===")
-                execute_entry(api, strategy, log)
-                entry_done = True
+                if not is_market_rising(api, minutes=3):
+                    log.info(f"[{sid}] KODEX200 3분봉 하락 추세 → 당일 매수 중단")
+                    entry_done = True
+                else:
+                    log.info(f"=== [{sid}] 매수 실행 ===")
+                    execute_entry(api, strategy, log)
+                    entry_done = True
 
         # 모니터링 (자신의 포지션만 체크)
         if 900 <= t < 1520:

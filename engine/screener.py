@@ -8,20 +8,45 @@ from engine.research import get_today_research
 
 log = logging.getLogger(__name__)
 
+_KODEX200 = "069500"  # KOSPI 방향 프록시
+
+def is_market_rising(api: KISApi, minutes: int = 3) -> bool:
+    """
+    KODEX200 분봉 기준 직전 N분 추세 확인
+    최신 분봉 종가 > N분 전 분봉 종가 이면 True (상승 추세)
+    조회 실패 시 True 반환 (필터 미적용으로 fall-through)
+    """
+    try:
+        candles = api.get_minute_candles(_KODEX200, count=minutes + 2)
+        if len(candles) < minutes + 1:
+            log.warning("KODEX200 분봉 데이터 부족 → 필터 미적용")
+            return True
+        latest = float(candles[0].get("stck_prpr") or candles[0].get("stck_clpr", 0))
+        prev   = float(candles[minutes].get("stck_prpr") or candles[minutes].get("stck_clpr", 0))
+        rising = latest > prev
+        log.info(f"[지수 방향] KODEX200 {minutes}분 전 {prev:,.0f} → 현재 {latest:,.0f} ({'상승' if rising else '하락'})")
+        return rising
+    except Exception as e:
+        log.warning(f"[지수 방향 조회 실패] {e} → 필터 미적용")
+        return True
+
+
 _ETF_PREFIXES = (
     "KODEX", "TIGER", "ARIRANG", "KBSTAR", "HANARO", "KOSEF",
     "KINDEX", "ACE", "SOL", "FOCUS", "SMART", "TIMEFOLIO",
     "TREX", "PLUS", "NEWTON", "RISE", "WOORI ETF", "KIWOOM",
 )
 
+def is_etn(name: str) -> bool:
+    return "ETN" in name.upper()
+
 def is_etf(name: str) -> bool:
-    upper = name.upper()
-    if "ETN" in upper:
-        return True
-    return any(upper.startswith(p) for p in _ETF_PREFIXES)
+    return any(name.upper().startswith(p) for p in _ETF_PREFIXES)
 
 
-def get_execution_strength(api: KISApi, stock_code: str) -> float:
+def get_execution_strength(api: KISApi, stock_code: str, instant: bool = False) -> float:
+    if instant:
+        return api.get_instant_execution_strength(stock_code)
     return api.get_execution_strength(stock_code)
 
 
@@ -49,6 +74,9 @@ def _build_volume_candidates(api: KISApi, univ: dict, entry: dict) -> list[dict]
     candidates = []
     for s in volume_stocks:
         if not (min_change <= s["change_rate"] <= max_change):
+            continue
+        if is_etn(s["name"]):
+            log.info(f"  {s['name']} ETN → 제외")
             continue
         if exclude_etf and is_etf(s["name"]):
             log.info(f"  {s['name']} ETF → 제외")
@@ -126,11 +154,13 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
     use_indicators   = indicator_cfg is not None
     min_volume_ratio = entry.get("min_volume_ratio")
 
+    instant_strength = entry.get("instant_execution_strength", False)
+
     result = []
     for s in candidates:
         try:
             price_info   = api.get_price(s["code"])
-            strength     = get_execution_strength(api, s["code"])
+            strength     = get_execution_strength(api, s["code"], instant=instant_strength)
             min_strength = entry.get("min_execution_strength")
             if min_strength is not None and strength < min_strength:
                 log.info(f"  {s['name']} 체결강도 {strength} < {min_strength} → 제외")
