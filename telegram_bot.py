@@ -14,8 +14,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine.notifier import BOT_TOKEN, CHAT_ID
 
 _BASE      = os.path.dirname(os.path.abspath(__file__))
-_LAUNCHER  = os.path.join(_BASE, "launcher.py")
+_MAIN      = os.path.join(_BASE, "main.py")
 _PYTHON    = sys.executable
+_MODE      = os.getenv("KIS_MODE", "paper")
 LOG_FILE   = os.path.join(_BASE, "telegram_bot.log")
 
 logging.basicConfig(
@@ -40,12 +41,12 @@ def send(text: str):
         log.warning(f"전송 실패: {e}")
 
 
-def is_launcher_running() -> bool:
+def is_watchdog_running() -> bool:
     import psutil
     for proc in psutil.process_iter(["pid", "cmdline"]):
         try:
             cmdline = " ".join(proc.info["cmdline"] or [])
-            if "launcher.py" in cmdline and "telegram_bot" not in cmdline:
+            if "watchdog.py" in cmdline and "telegram_bot" not in cmdline:
                 return True
         except Exception:
             pass
@@ -68,30 +69,30 @@ def get_running_strategies() -> list[str]:
 
 
 def cmd_start():
-    if is_launcher_running():
+    if is_watchdog_running():
         send("✅ 자동매매 시스템이 이미 실행 중입니다.")
         return
 
     try:
         subprocess.Popen(
-            [_PYTHON, _LAUNCHER],
+            [_PYTHON, _MAIN, "--mode", _MODE],
             cwd=_BASE,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
         )
         time.sleep(5)
-        if is_launcher_running():
-            send("🚀 자동매매 시스템을 시작했습니다.")
-            log.info("launcher 시작 완료")
+        if is_watchdog_running():
+            send(f"🚀 자동매매 시스템을 시작했습니다. (모드: {_MODE})")
+            log.info("watchdog 시작 완료")
         else:
-            send("⚠️ 시작 명령을 보냈으나 프로세스를 확인할 수 없습니다. launcher.log를 확인하세요.")
+            send("⚠️ 시작 명령을 보냈으나 프로세스를 확인할 수 없습니다. watchdog 로그를 확인하세요.")
     except Exception as e:
         send(f"⚠️ 시작 실패: {e}")
-        log.error(f"launcher 시작 실패: {e}")
+        log.error(f"watchdog 시작 실패: {e}")
 
 
 def cmd_status():
     now = datetime.now().strftime("%H:%M:%S")
-    launcher = is_launcher_running()
+    launcher = is_watchdog_running()
     strategies = get_running_strategies()
 
     lines = [f"📡 <b>시스템 상태</b> ({now})\n"]
@@ -142,7 +143,7 @@ def cmd_stop():
     for proc in psutil.process_iter(["pid", "cmdline"]):
         try:
             cmdline = " ".join(proc.info["cmdline"] or [])
-            if ("launcher.py" in cmdline or "runner.py" in cmdline) and "telegram_bot" not in cmdline:
+            if ("watchdog.py" in cmdline or "runner.py" in cmdline) and "telegram_bot" not in cmdline:
                 proc.kill()
                 killed.append(proc.info["cmdline"][-1] if proc.info["cmdline"] else str(proc.pid))
         except Exception:

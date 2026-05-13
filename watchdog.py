@@ -1,6 +1,7 @@
 """
-워치독 프로세스 — 전략 runner + 텔레그램 봇 감시 및 자동 재시작
+워치독 프로세스 — 전략 runner 감시 및 자동 재시작
 매 60초마다 프로세스 생존 확인, 죽으면 재시작 + 텔레그램 알림
+텔레그램 봇은 별도 프로세스로 독립 실행 (Task Scheduler 로그인 시 기동)
 """
 
 import os
@@ -67,12 +68,6 @@ def run():
     # 감시 대상: {label: (args, Popen|None)}
     targets: dict[str, dict] = {}
 
-    # 텔레그램 봇
-    targets["telegram_bot"] = {
-        "args": [_PYTHON, os.path.join(_BASE, "telegram_bot.py")],
-        "proc": None,
-    }
-
     # 활성 전략 runner
     for sid in _load_enabled_strategies():
         targets[sid] = {
@@ -111,7 +106,7 @@ def run():
 
         for label, t in list(targets.items()):
             # 비활성화된 전략은 감시 목록에서 제거
-            if label != "telegram_bot" and label not in enabled:
+            if label not in enabled:
                 if t["proc"] and t["proc"].poll() is None:
                     t["proc"].terminate()
                 del targets[label]
