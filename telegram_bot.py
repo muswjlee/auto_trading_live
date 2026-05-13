@@ -261,6 +261,44 @@ def cmd_balance():
         send(f"⚠️ 잔고 조회 오류: {e}")
 
 
+def cmd_strategy():
+    try:
+        from glob import glob
+        files = sorted(glob(os.path.join(_BASE, "strategies", "*.json")))
+        if not files:
+            send("📭 전략 파일이 없습니다.")
+            return
+
+        lines = ["📋 <b>전략별 조건</b>\n"]
+        for path in files:
+            with open(path, "r", encoding="utf-8") as f:
+                s = json.load(f)
+
+            enabled  = s.get("enabled", False)
+            icon     = "✅" if enabled else "⛔"
+            sch      = s.get("schedule", {})
+            uni      = s.get("universe", {})
+            ent      = s.get("entry", {})
+            ext      = s.get("exit", {})
+
+            entry_t  = sch.get("entry_time", "-")
+            end_t    = sch.get("entry_end_time", "")
+            time_str = f"{entry_t}~{end_t}" if end_t else entry_t
+            cont     = "연속" if sch.get("continuous_entry") else "1회"
+
+            lines.append(
+                f"{icon} <b>{s.get('name', s['id'])}</b>\n"
+                f"  진입: {time_str} ({cont})  |  종목수: {ent.get('max_stocks','-')}개\n"
+                f"  변화율: {ent.get('min_change_rate','-')}~{ent.get('max_change_rate','-')}%  |  체결강도: ≥{ent.get('min_execution_strength','-')}\n"
+                f"  가격: {uni.get('min_price',0):,}~{uni.get('max_price',0):,}원  |  ETF: {'제외' if uni.get('exclude_etf') else '포함'}\n"
+                f"  TP: +{ext.get('take_profit','-')}%  /  SL: {ext.get('stop_loss','-')}%"
+            )
+
+        send("\n\n".join(lines))
+    except Exception as e:
+        send(f"⚠️ 전략 조회 오류: {e}")
+
+
 def cmd_help():
     send(
         "📋 <b>사용 가능한 명령어</b>\n\n"
@@ -271,6 +309,7 @@ def cmd_help():
         "/pnl — 전략별 손익 상세\n"
         "/position — 보유 포지션 + 평가손익\n"
         "/balance — 예수금 및 총평가금액\n"
+        "/strategy — 전략별 조건 확인\n"
         "/help — 명령어 목록"
     )
 
@@ -283,6 +322,7 @@ COMMANDS = {
     "/pnl":      cmd_pnl,
     "/position": cmd_position,
     "/balance":  cmd_balance,
+    "/strategy": cmd_strategy,
     "/help":     cmd_help,
 }
 
