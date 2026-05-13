@@ -10,8 +10,6 @@
   },
   "universe": {
     "top_n": 10,
-    "min_price": 5000,
-    "max_price": 200000
   },
   "entry": {
     "consecutive_up_ticks": 5,
