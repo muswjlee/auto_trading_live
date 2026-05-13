@@ -286,11 +286,22 @@ def cmd_strategy():
             time_str = f"{entry_t}~{end_t}" if end_t else entry_t
             cont     = "연속" if sch.get("continuous_entry") else "1회"
 
+            min_p = uni.get('min_price')
+            max_p = uni.get('max_price')
+            if min_p and max_p:
+                price_str = f"{min_p:,}~{max_p:,}원"
+            elif min_p:
+                price_str = f"{min_p:,}원 이상"
+            elif max_p:
+                price_str = f"{max_p:,}원 이하"
+            else:
+                price_str = "제한없음"
+
             lines.append(
                 f"{icon} <b>{s.get('name', s['id'])}</b>\n"
                 f"  진입: {time_str} ({cont})  |  종목수: {ent.get('max_stocks','-')}개\n"
                 f"  변화율: {ent.get('min_change_rate','-')}~{ent.get('max_change_rate','-')}%  |  체결강도: ≥{ent.get('min_execution_strength','-')}\n"
-                f"  가격: {uni.get('min_price',0):,}~{uni.get('max_price',0):,}원  |  ETF: {'제외' if uni.get('exclude_etf') else '포함'}\n"
+                f"  가격: {price_str}  |  ETF: {'제외' if uni.get('exclude_etf') else '포함'}\n"
                 f"  TP: +{ext.get('take_profit','-')}%  /  SL: {ext.get('stop_loss','-')}%"
             )
 
