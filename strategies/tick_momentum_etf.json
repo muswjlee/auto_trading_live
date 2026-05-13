@@ -2,7 +2,7 @@
   "id": "tick_momentum_etf",
   "name": "5틱 모멘텀 스캘핑",
   "type": "tick",
-  "enabled": true,
+  "enabled": false,
   "schedule": {
     "start_time": "09:01",
     "end_time": "15:10",
@@ -29,3 +29,4 @@
     "max_daily_loss_pct": -1.0
   }
 }
+

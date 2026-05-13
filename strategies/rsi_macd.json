@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "rsi_macd",
   "name": "RSI + MACD 골든크로스 전략",
   "enabled": false,

@@ -3,7 +3,12 @@ __pycache__/
 *.pyc
 *.pyo
 trading*.log
+watchdog.log
+telegram_bot.log
 positions.json
 daily_pnl.json
+balance_history.json
+strategy_history.json
+pnl_*.json
 .token_cache.json
 launcher.log
