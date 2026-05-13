@@ -3,13 +3,18 @@
 import os
 import requests
 import logging
+from dotenv import load_dotenv
 
 log = logging.getLogger(__name__)
 
-BOT_TOKEN = "8527515865:AAGgyyYvhWSNLXVz3P6-pVqJPWXP-jAhDl0"
-CHAT_ID   = "8221120885"
+_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_MODE = os.getenv("KIS_MODE", "paper")
+load_dotenv(os.path.join(_BASE, f".env.{_MODE}"))
 
-_MODE_TAG = "[모의] " if os.getenv("KIS_MODE", "paper") == "paper" else ""
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
+
+_MODE_TAG = "[모의] " if _MODE == "paper" else ""
 
 
 def send(message: str):
