@@ -9,26 +9,48 @@ from engine.research import get_today_research
 log = logging.getLogger(__name__)
 
 _KODEX200 = "069500"  # KOSPI 방향 프록시
+_kodex_cache: list[tuple[float, float]] = []   # (epoch_sec, price)
+_CACHE_MAX_AGE = 900                            # 15분 초과 항목 제거
 
-def is_market_rising(api: KISApi, minutes: int = 3) -> bool:
-    """
-    KODEX200 분봉 기준 직전 N분 추세 확인
-    최신 분봉 종가 > N분 전 분봉 종가 이면 True (상승 추세)
-    조회 실패 시 True 반환 (필터 미적용으로 fall-through)
-    """
+
+def update_kodex_cache(api: KISApi):
+    """KODEX200 현재가를 캐시에 추가 — runner 메인 루프에서 60초마다 호출"""
     try:
-        candles = api.get_minute_candles(_KODEX200, count=minutes + 2)
-        if len(candles) < minutes + 1:
-            log.warning("KODEX200 분봉 데이터 부족 → 필터 미적용")
-            return True
-        latest = float(candles[0].get("stck_prpr") or candles[0].get("stck_clpr", 0))
-        prev   = float(candles[minutes].get("stck_prpr") or candles[minutes].get("stck_clpr", 0))
-        rising = latest > prev
-        log.info(f"[지수 방향] KODEX200 {minutes}분 전 {prev:,.0f} → 현재 {latest:,.0f} ({'상승' if rising else '하락'})")
-        return rising
-    except Exception as e:
-        log.warning(f"[지수 방향 조회 실패] {e} → 필터 미적용")
+        info  = api.get_price(_KODEX200)
+        price = float(info["stck_prpr"])
+        now   = time.time()
+        _kodex_cache.append((now, price))
+        cutoff = now - _CACHE_MAX_AGE
+        while _kodex_cache and _kodex_cache[0][0] < cutoff:
+            _kodex_cache.pop(0)
+    except Exception:
+        pass
+
+
+def is_market_rising(minutes: int = 3) -> bool:
+    """
+    KODEX200 가격 캐시 기준 직전 N분 추세 확인
+    최신 캐시 가격 >= N분 전 캐시 가격이면 True (상승/보합)
+    캐시 부족 또는 N분 전 데이터 없으면 True 반환 (필터 미적용)
+    """
+    if len(_kodex_cache) < 2:
+        log.warning("KODEX200 캐시 부족 → 필터 미적용")
         return True
+
+    now_ts, current = _kodex_cache[-1]
+    target    = now_ts - minutes * 60
+    tolerance = 90  # ±90초 허용
+
+    candidates = [(abs(t - target), p) for t, p in _kodex_cache[:-1]]
+    diff, prev = min(candidates, key=lambda x: x[0])
+
+    if diff > tolerance:
+        log.warning(f"KODEX200 {minutes}분 전 캐시 없음 ({diff:.0f}초 차이) → 필터 미적용")
+        return True
+
+    rising = current >= prev
+    log.info(f"[지수 방향] KODEX200 {minutes}분 전 {prev:,.0f} → 현재 {current:,.0f} ({'상승' if rising else '하락'})")
+    return rising
 
 
 _ETF_PREFIXES = (

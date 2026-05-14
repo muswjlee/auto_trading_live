@@ -11,7 +11,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kis_api import KISApi
-from engine.screener import screen, is_market_rising
+from engine.screener import screen, is_market_rising, update_kodex_cache
 from engine.monitor import (
     add_position, check_and_exit, load_positions,
     remove_position, record_trade, load_daily_pnl,
@@ -98,9 +98,9 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
                     continue
                 log.info(f"[매수 직전 재확인] {name}({code}) 체결강도 {fresh_strength} ✓")
 
-            # 매수 직전 KODEX200 3분봉 상승 확인
-            if not is_market_rising(api, minutes=3):
-                log.info(f"[매수 취소] {name}({code}) KODEX200 3분봉 하락 추세 → 스킵")
+            # 매수 직전 KODEX200 추세 확인 (캐시 기반)
+            if not is_market_rising(minutes=3):
+                log.info(f"[매수 취소] {name}({code}) KODEX200 하락 추세 → 스킵")
                 cancel_reservation(code, sid)
                 continue
 
@@ -294,14 +294,22 @@ def run(strategy_id: str):
     log.info(f"[{sid}] 프로세스 시작 | 진입: {strategy['schedule']['entry_time']}"
              + (" (연속진입)" if continuous else ""))
 
-    entry_done       = False
-    force_sold_day   = None
-    summary_sent_day = None
+    entry_done         = False
+    force_sold_day     = None
+    summary_sent_day   = None
+    last_kodex_update  = 0.0
 
     while True:
         now   = datetime.now()
         today = now.date()
         t     = now.hour * 100 + now.minute
+
+        # KODEX200 캐시 업데이트 (장 시간 중 60초마다)
+        if 855 <= t < 1535:
+            epoch = now.timestamp()
+            if epoch - last_kodex_update >= 60:
+                update_kodex_cache(api)
+                last_kodex_update = epoch
 
         # 자정 초기화
         if t < 855 and entry_done:
@@ -335,8 +343,8 @@ def run(strategy_id: str):
         else:
             # 일반(0905/0910/0915): 진입 시간 도달 시 KODEX200 3분봉 확인 후 1회 매수
             if not entry_done and entry_t <= t < entry_t + 10:
-                if not is_market_rising(api, minutes=3):
-                    log.info(f"[{sid}] KODEX200 3분봉 하락 추세 → 당일 매수 중단")
+                if not is_market_rising(minutes=3):
+                    log.info(f"[{sid}] KODEX200 하락 추세 → 당일 매수 중단")
                     entry_done = True
                 else:
                     log.info(f"=== [{sid}] 매수 실행 ===")
