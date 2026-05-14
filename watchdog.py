@@ -62,8 +62,26 @@ def _start_process(label: str, args: list, log) -> subprocess.Popen:
     return proc
 
 
+def _ensure_single_instance(log) -> bool:
+    """이미 실행 중인 워치독이 있으면 True 반환 (중복 기동 방지)"""
+    try:
+        with open(_PID_FILE) as f:
+            existing_pid = int(f.read().strip())
+        import psutil
+        if psutil.pid_exists(existing_pid) and existing_pid != os.getpid():
+            log.warning(f"워치독 이미 실행 중 (PID={existing_pid}) → 중복 기동 종료")
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def run():
     log = _setup_logger()
+
+    if _ensure_single_instance(log):
+        return
+
     log.info("=== 워치독 시작 ===")
 
     # PID 파일 기록 (telegram_bot 생존 확인용)
