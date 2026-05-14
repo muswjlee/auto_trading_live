@@ -90,11 +90,18 @@ def run():
     else:
         log.info("장 시간 외 — 초기 기동 생략, 감시만 대기")
 
+    last_heartbeat = 0  # 마지막 heartbeat 시각 (epoch)
+
     while True:
         time.sleep(CHECK_INTERVAL)
         now      = datetime.now()
         now_t    = now.hour * 100 + now.minute
-        today    = now.date()
+
+        # heartbeat: 5분마다 생존 로그
+        epoch = now.timestamp()
+        if epoch - last_heartbeat >= 300:
+            log.info(f"[워치독 생존] 감시 중 — 전략 {list(targets.keys())}")
+            last_heartbeat = epoch
 
         # 장 종료 후 감시 종료
         if now_t >= END_HOUR:
@@ -110,33 +117,38 @@ def run():
         if now_t < START_HOUR:
             continue
 
-        # 전략 목록 재로드 (장 중 전략 변경 반영)
-        enabled = set(_load_enabled_strategies())
+        try:
+            # 전략 목록 재로드 (장 중 전략 변경 반영)
+            enabled = set(_load_enabled_strategies())
 
-        for label, t in list(targets.items()):
-            # 비활성화된 전략은 감시 목록에서 제거
-            if label not in enabled:
-                if t["proc"] and t["proc"].poll() is None:
-                    t["proc"].terminate()
-                del targets[label]
-                log.info(f"[제거] {label} 비활성화됨")
-                continue
+            for label, t in list(targets.items()):
+                # 비활성화된 전략은 감시 목록에서 제거
+                if label not in enabled:
+                    if t["proc"] and t["proc"].poll() is None:
+                        t["proc"].terminate()
+                    del targets[label]
+                    log.info(f"[제거] {label} 비활성화됨")
+                    continue
 
-            proc = t["proc"]
-            if proc is None or proc.poll() is not None:
-                # 프로세스가 없거나 종료됨 → 재시작
-                exit_code = proc.returncode if proc else "없음"
-                log.warning(f"[감지] {label} 종료됨 (exit={exit_code}) → 재시작")
-                t["proc"] = _start_process(label, t["args"], log)
+                proc = t["proc"]
+                if proc is None or proc.poll() is not None:
+                    # 프로세스가 없거나 종료됨 → 재시작
+                    exit_code = proc.returncode if proc else "없음"
+                    log.warning(f"[감지] {label} 종료됨 (exit={exit_code}) → 재시작")
+                    t["proc"] = _start_process(label, t["args"], log)
 
-        # 새로 활성화된 전략 추가
-        for sid in enabled:
-            if sid not in targets:
-                targets[sid] = {
-                    "args": [_PYTHON, os.path.join(_BASE, "engine", "runner.py"), sid],
-                    "proc": None,
-                }
-                targets[sid]["proc"] = _start_process(sid, targets[sid]["args"], log)
+            # 새로 활성화된 전략 추가
+            for sid in enabled:
+                if sid not in targets:
+                    targets[sid] = {
+                        "args": [_PYTHON, os.path.join(_BASE, "engine", "runner.py"), sid],
+                        "proc": None,
+                    }
+                    targets[sid]["proc"] = _start_process(sid, targets[sid]["args"], log)
+
+        except Exception as e:
+            log.error(f"[워치독 루프 오류] {e} — 다음 주기에 재시도", exc_info=True)
+            send(f"⚠️ <b>[워치독]</b> 루프 오류 발생: {e}")
 
 
 if __name__ == "__main__":
