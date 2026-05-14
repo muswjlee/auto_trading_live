@@ -18,6 +18,8 @@ _MAIN      = os.path.join(_BASE, "main.py")
 _PYTHON    = sys.executable
 _MODE      = os.getenv("KIS_MODE", "paper")
 LOG_FILE   = os.path.join(_BASE, "telegram_bot.log")
+_PNL_FILE  = os.path.join(_BASE, f"daily_pnl_{_MODE}.json")
+_POS_FILE  = os.path.join(_BASE, f"positions_{_MODE}.json")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -106,7 +108,7 @@ def cmd_status():
 
     # 오늘 손익
     try:
-        pnl_file = os.path.join(_BASE, "daily_pnl.json")
+        pnl_file = _PNL_FILE
         if os.path.exists(pnl_file):
             with open(pnl_file, "r", encoding="utf-8") as f:
                 pnl = json.load(f)
@@ -120,7 +122,7 @@ def cmd_status():
 
     # 보유 포지션
     try:
-        pos_file = os.path.join(_BASE, "positions.json")
+        pos_file = _POS_FILE
         if os.path.exists(pos_file):
             with open(pos_file, "r", encoding="utf-8") as f:
                 pos = json.load(f)
@@ -156,7 +158,7 @@ def cmd_stop():
 
 def cmd_pnl():
     try:
-        pnl_file = os.path.join(_BASE, "daily_pnl.json")
+        pnl_file = _PNL_FILE
         if not os.path.exists(pnl_file):
             send("📭 오늘 거래 내역이 없습니다.")
             return
@@ -192,7 +194,7 @@ def cmd_pnl():
 
 def cmd_position():
     try:
-        pos_file = os.path.join(_BASE, "positions.json")
+        pos_file = _POS_FILE
         if not os.path.exists(pos_file):
             send("📦 보유 포지션 없음")
             return
