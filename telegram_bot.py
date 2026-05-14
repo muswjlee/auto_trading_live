@@ -42,15 +42,14 @@ def send(text: str):
 
 
 def is_watchdog_running() -> bool:
-    import psutil
-    for proc in psutil.process_iter(["pid", "cmdline"]):
-        try:
-            cmdline = " ".join(proc.info["cmdline"] or [])
-            if "watchdog.py" in cmdline and "telegram_bot" not in cmdline:
-                return True
-        except Exception:
-            pass
-    return False
+    pid_file = os.path.join(_BASE, "watchdog.pid")
+    try:
+        with open(pid_file) as f:
+            pid = int(f.read().strip())
+        import psutil
+        return psutil.pid_exists(pid)
+    except Exception:
+        return False
 
 
 def get_running_strategies() -> list[str]:

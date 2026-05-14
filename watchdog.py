@@ -16,10 +16,11 @@ from glob import glob
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine.notifier import send
 
-_BASE    = os.path.dirname(os.path.abspath(__file__))
-_PYTHON  = sys.executable
-_MODE    = os.getenv("KIS_MODE", "paper")
+_BASE     = os.path.dirname(os.path.abspath(__file__))
+_PYTHON   = sys.executable
+_MODE     = os.getenv("KIS_MODE", "paper")
 _LOG_FILE = os.path.join(_BASE, f"watchdog_{_MODE}.log")
+_PID_FILE = os.path.join(_BASE, "watchdog.pid")
 
 CHECK_INTERVAL = 60   # 초
 START_HOUR     = 850  # 감시 시작 (08:50)
@@ -65,6 +66,10 @@ def run():
     log = _setup_logger()
     log.info("=== 워치독 시작 ===")
 
+    # PID 파일 기록 (telegram_bot 생존 확인용)
+    with open(_PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+
     # 감시 대상: {label: (args, Popen|None)}
     targets: dict[str, dict] = {}
 
@@ -95,6 +100,10 @@ def run():
         if now_t >= END_HOUR:
             log.info("15:35 이후 — 워치독 종료")
             send("🐕 <b>[워치독]</b> 오늘 감시 종료")
+            try:
+                os.remove(_PID_FILE)
+            except OSError:
+                pass
             return
 
         # 장 시작 전 대기
@@ -135,3 +144,8 @@ if __name__ == "__main__":
         run()
     except KeyboardInterrupt:
         logging.getLogger("watchdog").info("수동 종료")
+    finally:
+        try:
+            os.remove(_PID_FILE)
+        except OSError:
+            pass
