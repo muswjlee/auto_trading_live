@@ -402,4 +402,7 @@ def check_and_exit(api: KISApi, strategies: list):
             time.sleep(0.1)
 
         except Exception as e:
-            log.error(f"[모니터 오류] {pos_key}: {e}")
+            if "500" in str(e):
+                log.warning(f"[모니터 일시 오류] {pos['name']}({code}) 현재가 조회 실패 (VTS 500) — 다음 주기 재시도")
+            else:
+                log.error(f"[모니터 오류] {pos_key}: {e}")
