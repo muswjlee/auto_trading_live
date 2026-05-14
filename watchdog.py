@@ -130,10 +130,19 @@ def run():
                     log.info(f"[제거] {label} 비활성화됨")
                     continue
 
+                # 이미 정상 종료된 전략은 재시작하지 않음
+                if t.get("gracefully_stopped"):
+                    continue
+
                 proc = t["proc"]
                 if proc is None or proc.poll() is not None:
-                    # 프로세스가 없거나 종료됨 → 재시작
-                    exit_code = proc.returncode if proc else "없음"
+                    # 프로세스가 없거나 종료됨
+                    exit_code = proc.returncode if proc else None
+                    if proc is not None and exit_code == 0:
+                        # 정상 종료(exit=0) — 재시작 없음 (15:30 자동 종료 등)
+                        log.info(f"[{label}] 정상 종료 (exit=0) → 재시작 없음")
+                        t["gracefully_stopped"] = True
+                        continue
                     log.warning(f"[감지] {label} 종료됨 (exit={exit_code}) → 재시작")
                     t["proc"] = _start_process(label, t["args"], log)
 
