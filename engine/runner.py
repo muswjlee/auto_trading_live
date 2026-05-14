@@ -15,7 +15,7 @@ from engine.screener import screen, is_market_rising
 from engine.monitor import (
     add_position, check_and_exit, load_positions,
     remove_position, record_trade, load_daily_pnl,
-    reserve_or_skip, cancel_reservation,
+    reserve_or_skip, cancel_reservation, is_sl_blacklisted,
 )
 from engine.notifier import notify_buy, notify_no_signal, notify_error, notify_sell, send
 
@@ -67,6 +67,11 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
         name  = stock["name"]
         price = stock["price"]
         qty   = max(1, amount // price)
+
+        # 당일 손절 종목 재매수 금지
+        if is_sl_blacklisted(code):
+            log.info(f"[손절 블랙리스트] {name}({code}) 당일 손절 이력 → 재매수 금지")
+            continue
 
         # 전략 간 중복 방지: 원자적 확인+예약
         if not reserve_or_skip(code, sid):

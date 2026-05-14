@@ -24,8 +24,41 @@ PNL_FILE      = os.path.join(os.path.dirname(__file__), "..", f"daily_pnl_{_MODE
 HISTORY_FILE  = os.path.join(os.path.dirname(__file__), "..", f"strategy_history_{_MODE}.json")
 BALANCE_FILE  = os.path.join(os.path.dirname(__file__), "..", f"balance_history_{_MODE}.json")
 
+SL_BLACKLIST_FILE = os.path.join(os.path.dirname(__file__), "..", f"sl_blacklist_{_MODE}.json")
+
 _POS_LOCK = FileLock(POSITION_FILE + ".lock")
 _PNL_LOCK = FileLock(PNL_FILE + ".lock")
+_SL_LOCK  = FileLock(SL_BLACKLIST_FILE + ".lock")
+
+
+# ── 손절 블랙리스트 ────────────────────────────────────────────────────────
+
+def add_sl_blacklist(code: str, name: str):
+    """당일 손절 종목을 블랙리스트에 추가 — 전략 간 공유"""
+    today = str(date.today())
+    with _SL_LOCK:
+        try:
+            with open(SL_BLACKLIST_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {}
+        if data.get("date") != today:
+            data = {"date": today, "codes": {}}
+        data["codes"][code] = name
+        with open(SL_BLACKLIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    log.info(f"[손절 블랙리스트] {name}({code}) 당일 재매수 금지 등록")
+
+
+def is_sl_blacklisted(code: str) -> bool:
+    """당일 손절된 종목이면 True"""
+    today = str(date.today())
+    try:
+        with open(SL_BLACKLIST_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("date") == today and code in data.get("codes", {})
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
 
 
 # ── 포지션 파일 관리 ───────────────────────────────────────────────────────
@@ -319,6 +352,11 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
                              pos.get("vwap_ratio", 0.0))
             except Exception as e:
                 log.error(f"[손익 기록 실패] {name}({code}): {e}")
+            if reason == "손절":
+                try:
+                    add_sl_blacklist(code, name)
+                except Exception as e:
+                    log.error(f"[블랙리스트 등록 실패] {name}({code}): {e}")
         finally:
             remove_position(pos_key)
 
