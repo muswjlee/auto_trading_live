@@ -63,9 +63,9 @@ def _build_volume_candidates(api: KISApi, univ: dict, entry: dict) -> list[dict]
     log.info("거래량 상위 종목 조회 중...")
     volume_stocks = api.get_volume_rank(
         top_n=univ["top_volume"],
-        market=univ["market"],
-        min_price=univ["min_price"],
-        max_price=univ["max_price"],
+        market=univ.get("market", "0"),
+        min_price=univ.get("min_price", 0),
+        max_price=univ.get("max_price", 0),
     )
     min_change  = entry["min_change_rate"]
     max_change  = entry.get("max_change_rate", 100.0)
