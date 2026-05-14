@@ -163,6 +163,7 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
     for pos_key, pos in list(my_pos.items()):
         code = pos.get("code") or pos_key.split("_")[0]
         sold = False
+        already_sold_by_other = False  # 다른 프로세스가 먼저 매도 완료한 경우
         last_err = None
         for attempt in range(5):
             try:
@@ -175,18 +176,20 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
                     if "잔고내역이 없습니다" in str(e):
                         log.warning(f"[장마감 강제매도] {pos['name']}({code}) 이미 매도됨 → 포지션만 제거")
                         sold = True
+                        already_sold_by_other = True
                     else:
                         raise
                 if sold:
                     try:
-                        notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", strategy["name"])
-                        try:
-                            record_trade(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", sid,
-                                         pos.get("execution_strength", 0.0),
-                                         pos.get("change_rate", 0.0),
-                                         pos.get("vwap_ratio", 0.0))
-                        except Exception as e:
-                            log.error(f"[손익 기록 실패] {pos['name']}({code}): {e}")
+                        if not already_sold_by_other:
+                            notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", strategy["name"])
+                            try:
+                                record_trade(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", sid,
+                                             pos.get("execution_strength", 0.0),
+                                             pos.get("change_rate", 0.0),
+                                             pos.get("vwap_ratio", 0.0))
+                            except Exception as e:
+                                log.error(f"[손익 기록 실패] {pos['name']}({code}): {e}")
                     finally:
                         remove_position(pos_key)
                         log.info(f"[장마감 강제매도] {pos['name']}({code}) 완료")
