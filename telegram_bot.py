@@ -8,6 +8,7 @@ import logging
 import subprocess
 import requests
 from datetime import datetime
+from filelock import FileLock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -20,6 +21,8 @@ _MODE      = os.getenv("KIS_MODE", "paper")
 LOG_FILE   = os.path.join(_BASE, "telegram_bot.log")
 _PNL_FILE  = os.path.join(_BASE, f"daily_pnl_{_MODE}.json")
 _POS_FILE  = os.path.join(_BASE, f"positions_{_MODE}.json")
+_PNL_LOCK  = FileLock(_PNL_FILE + ".lock")
+_POS_LOCK  = FileLock(_POS_FILE + ".lock")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -110,8 +113,9 @@ def cmd_status():
     try:
         pnl_file = _PNL_FILE
         if os.path.exists(pnl_file):
-            with open(pnl_file, "r", encoding="utf-8") as f:
-                pnl = json.load(f)
+            with _PNL_LOCK:
+                with open(pnl_file, "r", encoding="utf-8") as f:
+                    pnl = json.load(f)
             if pnl.get("date") == str(datetime.now().date()):
                 total = pnl.get("total_pnl", 0)
                 trades = len(pnl.get("trades", []))
@@ -124,8 +128,9 @@ def cmd_status():
     try:
         pos_file = _POS_FILE
         if os.path.exists(pos_file):
-            with open(pos_file, "r", encoding="utf-8") as f:
-                pos = json.load(f)
+            with _POS_LOCK:
+                with open(pos_file, "r", encoding="utf-8") as f:
+                    pos = json.load(f)
             if pos:
                 lines.append(f"\n📦 보유 포지션 ({len(pos)}개):")
                 for v in pos.values():
@@ -162,8 +167,9 @@ def cmd_pnl():
         if not os.path.exists(pnl_file):
             send("📭 오늘 거래 내역이 없습니다.")
             return
-        with open(pnl_file, "r", encoding="utf-8") as f:
-            pnl = json.load(f)
+        with _PNL_LOCK:
+            with open(pnl_file, "r", encoding="utf-8") as f:
+                pnl = json.load(f)
         if pnl.get("date") != str(datetime.now().date()):
             send("📭 오늘 거래 내역이 없습니다.")
             return
@@ -198,8 +204,9 @@ def cmd_position():
         if not os.path.exists(pos_file):
             send("📦 보유 포지션 없음")
             return
-        with open(pos_file, "r", encoding="utf-8") as f:
-            pos = json.load(f)
+        with _POS_LOCK:
+            with open(pos_file, "r", encoding="utf-8") as f:
+                pos = json.load(f)
         if not pos:
             send("📦 보유 포지션 없음")
             return
