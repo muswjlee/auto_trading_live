@@ -4,3 +4,4 @@ websocket-client>=1.7.0
 holidays>=0.46
 beautifulsoup4>=4.12.0
 filelock>=3.12.0
+psutil>=5.9.0
