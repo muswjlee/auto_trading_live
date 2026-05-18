@@ -38,14 +38,17 @@ def notify_buy(name: str, code: str, qty: int, price: int, strategy: str = ""):
 
 
 def notify_sell(name: str, code: str, qty: int, buy_price: int, current: int, reason: str, strategy: str = ""):
+    from engine.monitor import BUY_FEE_RATE, SELL_FEE_RATE, SELL_TAX_RATE
+    gross_pnl = (current - buy_price) * qty
+    cost = round(buy_price * qty * BUY_FEE_RATE + current * qty * (SELL_FEE_RATE + SELL_TAX_RATE))
+    net_pnl = gross_pnl - cost
     pnl_pct = (current - buy_price) / buy_price * 100
-    pnl_amt = (current - buy_price) * qty
-    emoji = "✅" if pnl_amt >= 0 else "🔴"
+    emoji = "✅" if net_pnl >= 0 else "🔴"
     prefix = f"[{strategy}] " if strategy else ""
     send(
         f"{emoji} <b>{prefix}[{reason}]</b> {name} ({code})\n"
         f"매입가: {buy_price:,}원 → 현재가: {current:,}원\n"
-        f"수익률: {pnl_pct:+.2f}%  손익: {pnl_amt:+,}원"
+        f"수익률: {pnl_pct:+.2f}%  손익: {net_pnl:+,}원"
     )
 
 
