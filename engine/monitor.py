@@ -326,10 +326,23 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
     except Exception as e:
         err = str(e)
         if "잔고내역이 없습니다" in err:
-            # 이미 매도된 포지션 — 기록 없이 포지션만 제거
-            log.warning(f"[{name}({code})] 잔고 없음 → 이미 매도된 포지션, 기록 없이 제거")
-            remove_position(pos_key)
-            return False
+            # 매수 직후 VTS 잔고 미반영일 수 있으므로 재시도
+            for retry in range(3):
+                time.sleep(5)
+                log.info(f"[{name}({code})] 잔고 없음 재시도 {retry+1}/3")
+                try:
+                    api.sell(code, qty)
+                    sold = True
+                    break
+                except Exception as e2:
+                    if "잔고내역이 없습니다" not in str(e2):
+                        log.warning(f"[매도 재시도 오류] {name}({code}): {e2}")
+                        break
+            else:
+                # 3회 재시도 후에도 잔고 없음 → 다른 프로세스가 이미 매도
+                log.warning(f"[{name}({code})] 잔고 없음 (3회 재시도) → 이미 매도된 포지션, 기록 없이 제거")
+                remove_position(pos_key)
+                return False
         log.warning(f"[매도 500에러] {name}({code}) [{sid}]: {e}")
         try:
             bal  = api.get_balance()
