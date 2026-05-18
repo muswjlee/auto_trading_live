@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from config import APP_KEY, APP_SECRET, ACCOUNT_NO, ACCOUNT_CD, BASE_URL, IS_PAPER, MODE
 
 _TOKEN_CACHE_FILE = os.path.join(os.path.dirname(__file__), f".token_cache_{MODE}.json")
+_TIMEOUT = 10   # 조회 API 기본 timeout (초)
+_ORDER_TIMEOUT = 15  # 주문 API timeout (초)
 
 
 class KISApi:
@@ -40,7 +42,7 @@ class KISApi:
             "grant_type": "client_credentials",
             "appkey": APP_KEY,
             "appsecret": APP_SECRET,
-        })
+        }, timeout=_TIMEOUT)
         res.raise_for_status()
         data = res.json()
         self._token = data["access_token"]
@@ -76,6 +78,7 @@ class KISApi:
                     f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price",
                     headers=self._headers("FHKST01010100"),
                     params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": stock_code},
+                    timeout=_TIMEOUT,
                 )
                 res.raise_for_status()
                 return res.json()["output"]
@@ -103,6 +106,7 @@ class KISApi:
                 "FID_VOL_CNT": str(min_volume),
                 "FID_INPUT_DATE_1": "",
             },
+            timeout=_TIMEOUT,
         )
         res.raise_for_status()
         return res.json().get("output", [])
@@ -174,6 +178,7 @@ class KISApi:
                 f"{BASE_URL}/uapi/domestic-stock/v1/quotations/chk-holiday",
                 headers=self._headers("CTCA0903R"),
                 params={"BASS_DT": date_str, "CTX_AREA_NK": "", "CTX_AREA_FK": ""},
+                timeout=_TIMEOUT,
             )
             res.raise_for_status()
             data = res.json()
@@ -205,6 +210,7 @@ class KISApi:
                     f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-ccnl",
                     headers=self._headers("FHKST01010300"),
                     params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": stock_code},
+                    timeout=_TIMEOUT,
                 )
                 res.raise_for_status()
                 output = res.json().get("output", [])
@@ -229,6 +235,7 @@ class KISApi:
                     f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-ccnl",
                     headers=self._headers("FHKST01010300"),
                     params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": stock_code},
+                    timeout=_TIMEOUT,
                 )
                 res.raise_for_status()
                 ticks = res.json().get("output", [])
@@ -287,6 +294,7 @@ class KISApi:
                 "FID_ORG_ADJ_PRC": "0",
                 "FID_INPUT_DATE_1": start,
             },
+            timeout=_TIMEOUT,
         )
         res.raise_for_status()
         return res.json()["output"][:count]
@@ -303,6 +311,7 @@ class KISApi:
                 "FID_INPUT_HOUR_1": now,
                 "FID_PW_DATA_INCU_YN": "N",
             },
+            timeout=_TIMEOUT,
         )
         res.raise_for_status()
         return res.json().get("output2", [])[:count]
@@ -332,6 +341,7 @@ class KISApi:
                     f"{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-balance",
                     headers=self._headers(tr_id),
                     params=params,
+                    timeout=_TIMEOUT,
                 )
                 res.raise_for_status()
                 data = res.json()
@@ -380,6 +390,7 @@ class KISApi:
                 "ORD_QTY": str(qty),
                 "ORD_UNPR": str(price),
             },
+            timeout=_ORDER_TIMEOUT,
         )
         res.raise_for_status()
         result = res.json()
@@ -411,6 +422,7 @@ class KISApi:
                 "INQR_DVSN_1": "0",
                 "INQR_DVSN_2": "0",
             },
+            timeout=_TIMEOUT,
         )
         res.raise_for_status()
         return res.json().get("output", [])
@@ -433,6 +445,7 @@ class KISApi:
                 "PDNO": stock_code,
                 "QTY_ALL_ORD_YN": "Y",
             },
+            timeout=_ORDER_TIMEOUT,
         )
         res.raise_for_status()
         return res.json()["output"]
