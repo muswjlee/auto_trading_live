@@ -235,6 +235,19 @@ class KISApi:
                 if not ticks:
                     continue
 
+                # 최신 틱이 60초 이상 오래됐으면 stale → 모멘텀 없음
+                recent_hour = ticks[0].get("stck_cntg_hour", "")
+                if len(recent_hour) == 6:
+                    now = datetime.now()
+                    tick_time = now.replace(
+                        hour=int(recent_hour[:2]),
+                        minute=int(recent_hour[2:4]),
+                        second=int(recent_hour[4:6]),
+                        microsecond=0,
+                    )
+                    if (now - tick_time).total_seconds() > 60:
+                        return 0.0
+
                 buy_vol = sell_vol = 0
                 last_dir = None
                 # ticks[0]이 최신, ticks[-1]이 가장 오래됨
