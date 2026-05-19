@@ -76,6 +76,41 @@ def _ensure_single_instance(log) -> bool:
     return False
 
 
+def _send_daily_summary(log):
+    """전략별 당일 손익 합산 요약 텔레그램 전송"""
+    try:
+        pnl_file = os.path.join(_BASE, f"daily_pnl_{_MODE}.json")
+        with open(pnl_file, encoding="utf-8") as f:
+            data = json.load(f)
+        trades = data.get("trades", [])
+        today  = data.get("date", "")
+        if not trades:
+            send(f"📊 <b>[{today} 전략별 손익]</b>\n거래 없음")
+            return
+
+        from collections import defaultdict
+        by_strat = defaultdict(list)
+        for t in trades:
+            by_strat[t.get("strategy_id", "?")].append(t)
+
+        lines = [f"📊 <b>[{today} 전략별 손익 요약]</b>\n"]
+        total_pnl = 0
+        total_cnt = 0
+        for sid, ts in sorted(by_strat.items()):
+            pnl = sum(t.get("pnl", 0) for t in ts)
+            cnt = len(ts)
+            emoji = "✅" if pnl >= 0 else "🔴"
+            lines.append(f"{emoji} {sid}: {pnl:+,}원 ({cnt}건)")
+            total_pnl += pnl
+            total_cnt += cnt
+
+        total_emoji = "✅" if total_pnl >= 0 else "🔴"
+        lines.append(f"\n{total_emoji} <b>합계: {total_pnl:+,}원 ({total_cnt}건)</b>")
+        send("\n".join(lines))
+    except Exception as e:
+        log.error(f"[일일 요약 전송 실패] {e}")
+
+
 def run():
     log = _setup_logger()
 
@@ -125,6 +160,7 @@ def run():
         if now_t >= END_HOUR:
             log.info("15:35 이후 — 워치독 종료")
             send("🐕 <b>[워치독]</b> 오늘 감시 종료")
+            _send_daily_summary(log)
             try:
                 os.remove(_PID_FILE)
             except OSError:
