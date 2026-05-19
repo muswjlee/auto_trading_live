@@ -108,6 +108,7 @@ def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: st
                 positions = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             positions = {}
+        from datetime import datetime as _dt
         positions[pos_key] = {
             "code": code, "name": name,
             "buy_price": buy_price, "qty": qty,
@@ -115,6 +116,7 @@ def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: st
             "execution_strength": execution_strength,
             "change_rate": change_rate,
             "vwap_ratio": vwap_ratio,
+            "bought_at": _dt.now().strftime("%H:%M:%S"),
         }
         with open(POSITION_FILE, "w", encoding="utf-8") as f:
             json.dump(positions, f, ensure_ascii=False, indent=2)
@@ -267,6 +269,15 @@ def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int
 
         data["total_pnl"]  += net_pnl
         data["total_cost"]  = data.get("total_cost", 0) + total_cost
+        from datetime import datetime as _dt
+        # 포지션에서 매수 시각 가져오기
+        try:
+            with open(POSITION_FILE, "r", encoding="utf-8") as pf:
+                pos_data = json.load(pf)
+            pos_key = f"{code}_{strategy_id}"
+            bought_at = pos_data.get(pos_key, {}).get("bought_at", "")
+        except Exception:
+            bought_at = ""
         data["trades"].append({
             "name": name, "code": code, "qty": qty,
             "buy_price": buy_price, "sell_price": sell_price,
@@ -275,6 +286,8 @@ def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int
             "execution_strength": execution_strength,
             "change_rate": change_rate,
             "vwap_ratio": vwap_ratio,
+            "bought_at": bought_at,
+            "sold_at": _dt.now().strftime("%H:%M:%S"),
         })
 
         with open(PNL_FILE, "w", encoding="utf-8") as f:
