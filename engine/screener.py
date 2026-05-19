@@ -65,6 +65,9 @@ def is_etn(name: str) -> bool:
 def is_etf(name: str) -> bool:
     return any(name.upper().startswith(p) for p in _ETF_PREFIXES)
 
+def is_inverse(name: str) -> bool:
+    return "인버스" in name
+
 
 def get_execution_strength(api: KISApi, stock_code: str, instant: bool = False) -> float:
     if instant:
@@ -99,6 +102,9 @@ def _build_volume_candidates(api: KISApi, univ: dict, entry: dict) -> list[dict]
             continue
         if is_etn(s["name"]):
             log.info(f"  {s['name']} ETN → 제외")
+            continue
+        if is_inverse(s["name"]):
+            log.info(f"  {s['name']} 인버스 → 제외")
             continue
         if exclude_etf and is_etf(s["name"]):
             log.info(f"  {s['name']} ETF → 제외")
