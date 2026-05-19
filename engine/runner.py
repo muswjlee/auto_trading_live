@@ -137,6 +137,16 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
                                 break
                         except Exception:
                             pass
+                        # 재시도 전 체결강도 재확인 — 모멘텀 소진이면 매수 포기
+                        min_strength = strategy["entry"].get("min_execution_strength")
+                        instant = strategy["entry"].get("instant_execution_strength", False)
+                        if min_strength is not None and not bought:
+                            from engine.screener import get_execution_strength
+                            retry_strength = get_execution_strength(api, code, instant=instant)
+                            if retry_strength < min_strength:
+                                log.info(f"[매수 포기] {name}({code}) 재시도 중 체결강도 {retry_strength} < {min_strength} → 모멘텀 소진")
+                                cancel_reservation(code, sid)
+                                break
             if not bought:
                 log.error(f"[매수 오류] {name}({code}): {last_err}")
                 notify_error(f"매수 실패 {name}({code}): {last_err}")
