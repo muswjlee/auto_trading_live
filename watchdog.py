@@ -84,25 +84,27 @@ def _send_daily_summary(log):
             data = json.load(f)
         trades = data.get("trades", [])
         today  = data.get("date", "")
-        if not trades:
-            send(f"📊 <b>[{today} 전략별 손익]</b>\n거래 없음")
-            return
 
         from collections import defaultdict
         by_strat = defaultdict(list)
         for t in trades:
             by_strat[t.get("strategy_id", "?")].append(t)
 
+        all_sids = sorted(_load_enabled_strategies())
         lines = [f"📊 <b>[{today} 전략별 손익 요약]</b>\n"]
         total_pnl = 0
         total_cnt = 0
-        for sid, ts in sorted(by_strat.items()):
-            pnl = sum(t.get("pnl", 0) for t in ts)
-            cnt = len(ts)
-            emoji = "✅" if pnl >= 0 else "🔴"
-            lines.append(f"{emoji} {sid}: {pnl:+,}원 ({cnt}건)")
-            total_pnl += pnl
-            total_cnt += cnt
+        for sid in all_sids:
+            ts = by_strat.get(sid, [])
+            if ts:
+                pnl = sum(t.get("pnl", 0) for t in ts)
+                cnt = len(ts)
+                emoji = "✅" if pnl >= 0 else "🔴"
+                lines.append(f"{emoji} {sid}: {pnl:+,}원 ({cnt}건)")
+                total_pnl += pnl
+                total_cnt += cnt
+            else:
+                lines.append(f"⬜ {sid}: 시장 모니터링 필터로 거래 없음")
 
         total_emoji = "✅" if total_pnl >= 0 else "🔴"
         lines.append(f"\n{total_emoji} <b>합계: {total_pnl:+,}원 ({total_cnt}건)</b>")
