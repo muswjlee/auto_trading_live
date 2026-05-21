@@ -3,7 +3,7 @@
   "name": "거래량 급등 풀타임 V3 (ETF 포함)",
   "enabled": true,
   "schedule": {
-    "entry_time": "09:01",
+    "entry_time": "14:00",
     "entry_end_time": "15:00",
     "monitor_interval_sec": 1,
     "continuous_entry": true
