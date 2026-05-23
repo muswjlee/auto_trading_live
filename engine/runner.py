@@ -355,7 +355,7 @@ def run(strategy_id: str):
                     execute_entry(api, strategy, log, suppress_no_signal=True)
         else:
             # 일반(0905/0910/0915): 진입 시간 도달 시 KODEX200 3분봉 확인 후 1회 매수
-            if not entry_done and entry_t <= t < entry_t + 10:
+            if not entry_done and entry_t <= t < entry_t + 1:
                 if strategy.get("use_market_filter", True) and not is_market_rising(minutes=3):
                     log.info(f"[{sid}] KODEX200 하락 추세 → 당일 매수 중단")
                     entry_done = True
