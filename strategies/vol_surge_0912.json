@@ -1,10 +1,10 @@
 {
-    "id":  "vol_surge_0904",
-    "name":  "거래량 급등 + 체결강도 전략 (09:04)",
+    "id":  "vol_surge_0912",
+    "name":  "거래량 급등 + 체결강도 전략 (09:12)",
     "enabled":  true,
     "use_market_filter":  false,
     "schedule":  {
-                     "entry_time":  "09:04",
+                     "entry_time":  "09:12",
                      "monitor_interval_sec":  1
                  },
     "universe":  {

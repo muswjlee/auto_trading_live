@@ -99,7 +99,7 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
                 log.info(f"[매수 직전 재확인] {name}({code}) 체결강도 {fresh_strength} ✓")
 
             # 매수 직전 KODEX200 추세 확인 (캐시 기반)
-            if not is_market_rising(minutes=3):
+            if strategy.get("use_market_filter", True) and not is_market_rising(minutes=3):
                 log.info(f"[매수 취소] {name}({code}) KODEX200 하락 추세 → 스킵")
                 cancel_reservation(code, sid)
                 continue
@@ -356,7 +356,7 @@ def run(strategy_id: str):
         else:
             # 일반(0905/0910/0915): 진입 시간 도달 시 KODEX200 3분봉 확인 후 1회 매수
             if not entry_done and entry_t <= t < entry_t + 10:
-                if not is_market_rising(minutes=3):
+                if strategy.get("use_market_filter", True) and not is_market_rising(minutes=3):
                     log.info(f"[{sid}] KODEX200 하락 추세 → 당일 매수 중단")
                     entry_done = True
                 else:
