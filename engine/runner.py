@@ -296,9 +296,9 @@ def run(strategy_id: str):
     try:
         current_cash = api.get_cash()
         if current_cash > 0:
-            amount = int(current_cash * 0.1)
+            amount = int(current_cash * 0.05)
             strategy["entry"]["amount_per_stock"] = amount
-            log.info(f"[{sid}] 종목당 매수금액: {amount:,}원 (현재 예수금 {current_cash:,}원의 10%)")
+            log.info(f"[{sid}] 종목당 매수금액: {amount:,}원 (현재 예수금 {current_cash:,}원의 5%)")
         else:
             log.info(f"[{sid}] 예수금 조회 결과 0 — 기본값 사용: {strategy['entry']['amount_per_stock']:,}원")
     except Exception as e:
