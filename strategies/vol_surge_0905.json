@@ -1,4 +1,4 @@
-{
+﻿{
     "id":  "vol_surge_0905",
     "name":  "거래량 급등 + 체결강도 전략 (09:05)",
     "enabled":  true,
@@ -22,7 +22,8 @@
                   "min_vwap_ratio":  100
               },
     "exit":  {
-                 "take_profit":  2.0,
+                 "take_profit": 1.0,
                  "stop_loss":  -1.0
              }
 }
+
