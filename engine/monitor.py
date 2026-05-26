@@ -100,7 +100,8 @@ def cancel_reservation(code: str, strategy_id: str):
 
 
 def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: str,
-                 execution_strength: float = 0.0, change_rate: float = 0.0, vwap_ratio: float = 0.0):
+                 execution_strength: float = 0.0, change_rate: float = 0.0, vwap_ratio: float = 0.0,
+                 tp_order_no: str = None, tp_price: int = None):
     pos_key = f"{code}_{strategy_id}"
     with _POS_LOCK:
         try:
@@ -117,6 +118,8 @@ def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: st
             "change_rate": change_rate,
             "vwap_ratio": vwap_ratio,
             "bought_at": _dt.now().strftime("%H:%M:%S"),
+            "tp_order_no": tp_order_no,
+            "tp_price": tp_price,
         }
         with open(POSITION_FILE, "w", encoding="utf-8") as f:
             json.dump(positions, f, ensure_ascii=False, indent=2)
@@ -397,33 +400,68 @@ def check_and_exit(api: KISApi, strategies: list):
 
     strategy_map = {s["id"]: s for s in strategies}
 
+    # 미체결 주문 목록 조회 (익절 지정가 체결 여부 확인용)
+    try:
+        pending = {o["odno"] for o in api.get_pending_orders()}
+        pending_available = True
+    except Exception as e:
+        log.warning(f"미체결 조회 실패: {e} — 현재가 모니터링으로 대체")
+        pending_available = False
+
     for pos_key, pos in list(positions.items()):
         code     = pos.get("code") or pos_key.split("_")[0]
         strategy = strategy_map.get(pos.get("strategy_id"))
         if not strategy:
-            continue  # 다른 전략 프로세스의 포지션 — 조용히 스킵
+            continue
         exit_cfg    = strategy["exit"]
         take_profit = exit_cfg["take_profit"]
         stop_loss   = exit_cfg["stop_loss"]
+        sid         = pos.get("strategy_id", "")
+        tp_order_no = pos.get("tp_order_no")
+        tp_price    = pos.get("tp_price")
+
         try:
-            price_info = api.get_price(code)
-            current    = int(price_info["stck_prpr"])
-            buy_price  = pos["buy_price"]
-            pnl_pct    = (current - buy_price) / buy_price * 100
-            sid        = pos.get("strategy_id", "")
-
-            log.info(
-                f"[모니터] {pos['name']}({code}) [{sid}] "
-                f"매입 {buy_price:,} → 현재 {current:,} ({pnl_pct:+.2f}%)"
-            )
-
-            if pnl_pct >= take_profit:
-                log.info(f"[익절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
-                _sell_with_verify(api, pos, pos_key, current, "익절", sid)
-
-            elif pnl_pct <= stop_loss:
-                log.info(f"[손절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
-                _sell_with_verify(api, pos, pos_key, current, "손절", sid)
+            if tp_order_no and tp_price and pending_available:
+                if tp_order_no not in pending:
+                    # 미체결 목록에 없음 → 익절 지정가 체결
+                    log.info(f"[익절 체결] {pos['name']}({code}) [{sid}] 지정가 {tp_price:,}원 체결 확인")
+                    notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], tp_price, "익절", sid)
+                    try:
+                        record_trade(pos["name"], code, pos["qty"], pos["buy_price"], tp_price, "익절", sid,
+                                     pos.get("execution_strength", 0.0),
+                                     pos.get("change_rate", 0.0),
+                                     pos.get("vwap_ratio", 0.0))
+                    except Exception as e:
+                        log.error(f"[손익 기록 실패] {pos['name']}({code}): {e}")
+                    remove_position(pos_key)
+                else:
+                    # 지정가 미체결 — 손절 여부만 체크
+                    price_info = api.get_price(code)
+                    current    = int(price_info["stck_prpr"])
+                    buy_price  = pos["buy_price"]
+                    pnl_pct    = (current - buy_price) / buy_price * 100
+                    log.info(f"[모니터] {pos['name']}({code}) [{sid}] 매입 {buy_price:,} → 현재 {current:,} ({pnl_pct:+.2f}%)")
+                    if pnl_pct <= stop_loss:
+                        log.info(f"[손절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 지정가 취소 후 시장가 매도")
+                        try:
+                            api.cancel_order(tp_order_no, code, pos["qty"])
+                            log.info(f"[지정가 취소] {pos['name']}({code}) 주문번호={tp_order_no} ✓")
+                        except Exception as e:
+                            log.warning(f"[지정가 취소 실패] {pos['name']}({code}): {e}")
+                        _sell_with_verify(api, pos, pos_key, current, "손절", sid)
+            else:
+                # 폴백: 기존 현재가 모니터링 방식
+                price_info = api.get_price(code)
+                current    = int(price_info["stck_prpr"])
+                buy_price  = pos["buy_price"]
+                pnl_pct    = (current - buy_price) / buy_price * 100
+                log.info(f"[모니터] {pos['name']}({code}) [{sid}] 매입 {buy_price:,} → 현재 {current:,} ({pnl_pct:+.2f}%)")
+                if pnl_pct >= take_profit:
+                    log.info(f"[익절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
+                    _sell_with_verify(api, pos, pos_key, current, "익절", sid)
+                elif pnl_pct <= stop_loss:
+                    log.info(f"[손절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
+                    _sell_with_verify(api, pos, pos_key, current, "손절", sid)
 
             time.sleep(0.1)
 
