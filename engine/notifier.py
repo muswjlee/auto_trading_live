@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 log = logging.getLogger(__name__)
 
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_MODE = os.getenv("KIS_MODE", "paper")
+_MODE = os.getenv("KIS_MODE", "live")
 load_dotenv(os.path.join(_BASE, f".env.{_MODE}"))
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")

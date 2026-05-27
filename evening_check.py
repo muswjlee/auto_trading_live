@@ -6,6 +6,7 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine.notifier import send
 
+_MODE = os.getenv("KIS_MODE", "live")
 today = datetime.now().strftime('%Y-%m-%d')
 issues = []
 lines = []
@@ -23,7 +24,7 @@ lines.append(f'전략 ({len(enabled)}개): ' + ', '.join(enabled))
 
 # 2. ERROR 로그 (오늘)
 err_files = []
-for f in glob('trading_*_paper.log') + ['watchdog_paper.log']:
+for f in glob(f'trading_*_{_MODE}.log') + [f'watchdog_{_MODE}.log']:
     if not os.path.exists(f):
         continue
     count = sum(1 for l in open(f, encoding='utf-8', errors='ignore')
@@ -45,7 +46,7 @@ else:
 
 # 4. 미청산 포지션
 try:
-    pos = json.load(open('positions_paper.json', encoding='utf-8'))
+    pos = json.load(open(f'positions_{_MODE}.json', encoding='utf-8'))
     real = {k: v for k, v in pos.items() if not v.get('_reserved')}
     if real:
         issues.append(f'미청산 포지션 {len(real)}개')
@@ -58,7 +59,7 @@ except:
 
 # 5. 토큰 만료
 try:
-    t = json.load(open('.token_cache_paper.json', encoding='utf-8'))
+    t = json.load(open(f'.token_cache_{_MODE}.json', encoding='utf-8'))
     exp = datetime.fromisoformat(t['expires'])
     hours = (exp - datetime.now()).total_seconds() / 3600
     exp_str = exp.strftime('%m-%d %H:%M')
@@ -75,7 +76,7 @@ except:
 
 # 6. PnL 중복
 try:
-    pnl = json.load(open('daily_pnl_paper.json', encoding='utf-8'))
+    pnl = json.load(open(f'daily_pnl_{_MODE}.json', encoding='utf-8'))
     if pnl.get('date') == today:
         seen = defaultdict(int)
         for tr in pnl.get('trades', []):

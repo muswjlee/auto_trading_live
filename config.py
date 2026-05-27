@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-MODE = os.getenv("KIS_MODE", "paper")
+MODE = os.getenv("KIS_MODE", "live")
 
 _env_file = os.path.join(os.path.dirname(__file__), f".env.{MODE}")
 load_dotenv(_env_file)

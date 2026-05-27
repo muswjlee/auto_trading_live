@@ -17,7 +17,7 @@ from engine.notifier import BOT_TOKEN, CHAT_ID
 _BASE      = os.path.dirname(os.path.abspath(__file__))
 _MAIN      = os.path.join(_BASE, "main.py")
 _PYTHON    = sys.executable
-_MODE      = os.getenv("KIS_MODE", "paper")
+_MODE      = os.getenv("KIS_MODE", "live")
 LOG_FILE   = os.path.join(_BASE, "telegram_bot.log")
 _PNL_FILE  = os.path.join(_BASE, f"daily_pnl_{_MODE}.json")
 _POS_FILE  = os.path.join(_BASE, f"positions_{_MODE}.json")
@@ -266,6 +266,7 @@ def cmd_balance():
             f"당일 매도금액: {sell_amt:,}원"
         )
     except Exception as e:
+        log.error(f"잔고 조회 오류: {e}", exc_info=True)
         send(f"⚠️ 잔고 조회 오류: {e}")
 
 

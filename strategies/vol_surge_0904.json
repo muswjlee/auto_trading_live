@@ -1,29 +1,29 @@
 {
-    "id": "vol_surge_0904",
-    "name": "거래량 급등 + 체결강도 전략 (09:04)",
-    "enabled": true,
-    "use_market_filter": false,
-    "schedule": {
-        "entry_time": "09:04",
-        "monitor_interval_sec": 1
-    },
-    "universe": {
-        "market": "0",
-        "top_volume": 100,
-        "exclude_etf": true
-    },
-    "entry": {
-        "min_change_rate": 3.0,
-        "max_change_rate": 10.0,
-        "sort_by": "execution_strength",
-        "max_stocks": 3,
-        "amount_per_stock": 1000000,
-        "order_type": "market",
-        "min_execution_strength": 120,
-        "min_vwap_ratio": 100
-    },
-    "exit": {
-        "take_profit": 1.0,
-        "stop_loss": -1.0
-    }
+    "id":  "vol_surge_0904",
+    "name":  "거래량 급등 + 체결강도 전략 (09:04)",
+    "enabled":  true,
+    "use_market_filter":  false,
+    "schedule":  {
+                     "entry_time":  "09:04",
+                     "monitor_interval_sec":  1
+                 },
+    "universe":  {
+                     "market":  "0",
+                     "top_volume":  100,
+                     "exclude_etf":  true
+                 },
+    "entry":  {
+                  "min_change_rate":  3.0,
+                  "max_change_rate":  10.0,
+                  "sort_by":  "execution_strength",
+                  "max_stocks":  3,
+                  "amount_per_stock":  1000000,
+                  "order_type":  "market",
+                  "min_execution_strength":  120,
+                  "min_vwap_ratio":  100
+              },
+    "exit":  {
+                 "take_profit":  1.0,
+                 "stop_loss":  -1.0
+             }
 }

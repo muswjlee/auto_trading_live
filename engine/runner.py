@@ -24,7 +24,7 @@ LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
 
 def _setup_logger(strategy_id: str) -> logging.Logger:
-    mode = os.getenv("KIS_MODE", "paper")
+    mode = os.getenv("KIS_MODE", "live")
     log_file = os.path.join(LOG_DIR, f"trading_{strategy_id}_{mode}.log")
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 

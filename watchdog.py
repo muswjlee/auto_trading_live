@@ -18,7 +18,7 @@ from engine.notifier import send
 
 _BASE     = os.path.dirname(os.path.abspath(__file__))
 _PYTHON   = sys.executable
-_MODE     = os.getenv("KIS_MODE", "paper")
+_MODE     = os.getenv("KIS_MODE", "live")
 _LOG_FILE = os.path.join(_BASE, f"watchdog_{_MODE}.log")
 _PID_FILE = os.path.join(_BASE, "watchdog.pid")
 

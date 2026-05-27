@@ -15,7 +15,7 @@ from glob import glob
 from datetime import datetime
 
 _BASE = os.path.dirname(os.path.abspath(__file__))
-_MODE = os.getenv("KIS_MODE", "paper")
+_MODE = os.getenv("KIS_MODE", "live")
 
 sys.path.insert(0, _BASE)
 
