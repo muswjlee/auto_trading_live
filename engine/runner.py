@@ -174,6 +174,24 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
     for pos_key, pos in list(my_pos.items()):
         code = pos.get("code") or pos_key.split("_")[0]
 
+        # 미체결 주문 먼저 취소 (수량 초과 오류 방지)
+        try:
+            pending = api.get_pending_orders()
+            for order in pending:
+                if order.get("pdno") != code:
+                    continue
+                order_no = order.get("odno", "")
+                ord_qty = int(order.get("ord_qty", 0))
+                if order_no and ord_qty:
+                    try:
+                        api.cancel_order(order_no, code, ord_qty)
+                        log.info(f"[미체결 취소] {pos['name']}({code}) 주문번호={order_no} {ord_qty}주")
+                        time.sleep(0.3)
+                    except Exception as ce:
+                        log.warning(f"[미체결 취소 오류] {pos['name']}({code}) 주문번호={order_no}: {ce}")
+        except Exception as e:
+            log.warning(f"[미체결 조회 오류] {pos['name']}({code}): {e}")
+
         sold = False
         already_sold_by_other = False  # 다른 프로세스가 먼저 매도 완료한 경우
         last_err = None

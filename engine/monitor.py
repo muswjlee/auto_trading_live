@@ -324,6 +324,26 @@ def load_daily_pnl() -> dict:
 
 # ── 모니터링 루프 ──────────────────────────────────────────────────────────
 
+def _cancel_pending_sells(api: KISApi, code: str, name: str):
+    """해당 종목의 미체결 주문 전체 취소 (수량 초과 오류 해소용)"""
+    try:
+        pending = api.get_pending_orders()
+        for order in pending:
+            if order.get("pdno") != code:
+                continue
+            order_no = order.get("odno", "")
+            qty = int(order.get("ord_qty", 0))
+            if order_no and qty:
+                try:
+                    api.cancel_order(order_no, code, qty)
+                    log.info(f"[미체결 취소] {name}({code}) 주문번호={order_no} {qty}주")
+                    time.sleep(0.3)
+                except Exception as ce:
+                    log.warning(f"[미체결 취소 오류] {name}({code}) 주문번호={order_no}: {ce}")
+    except Exception as e:
+        log.warning(f"[미체결 조회 오류] {name}({code}): {e}")
+
+
 def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
                       current: int, reason: str, sid: str) -> bool:
     """매도 실행 — 500에러 시 잔고 확인으로 체결 여부 판단 후 position 정리"""
@@ -338,7 +358,17 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
         sold = True
     except Exception as e:
         err = str(e)
-        if "잔고내역이 없습니다" in err:
+        if "주문 가능한 수량을 초과" in err or "주문가능수량을 초과" in err:
+            log.warning(f"[매도 수량 초과] {name}({code}) [{sid}] — 미체결 주문 취소 후 재시도")
+            _cancel_pending_sells(api, code, name)
+            time.sleep(1)
+            try:
+                api.sell(code, qty)
+                sold = True
+            except Exception as e2:
+                err = str(e2)
+                log.warning(f"[매도 재시도 오류] {name}({code}) [{sid}]: {e2}")
+        if not sold and "잔고내역이 없습니다" in err:
             # 매수 직후 VTS 잔고 미반영일 수 있으므로 재시도
             for retry in range(3):
                 time.sleep(5)
@@ -356,7 +386,8 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
                 log.warning(f"[{name}({code})] 잔고 없음 (3회 재시도) → 이미 매도된 포지션, 기록 없이 제거")
                 remove_position(pos_key)
                 return False
-        log.warning(f"[매도 500에러] {name}({code}) [{sid}]: {e}")
+        if not sold:
+            log.warning(f"[매도 500에러] {name}({code}) [{sid}]: {e}")
             try:
                 bal  = api.get_balance()
                 held = {s.get("pdno") for s in bal.get("stocks", [])}
