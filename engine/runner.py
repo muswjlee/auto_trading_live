@@ -22,16 +22,6 @@ from engine.notifier import notify_buy, notify_no_signal, notify_error, notify_s
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
 
-def _round_to_tick(price: int) -> int:
-    """KIS 호가 단위에 맞게 내림"""
-    if price < 1000:    return price
-    if price < 5000:    return (price // 5) * 5
-    if price < 10000:   return (price // 10) * 10
-    if price < 50000:   return (price // 50) * 50
-    if price < 100000:  return (price // 100) * 100
-    if price < 500000:  return (price // 500) * 500
-    return (price // 1000) * 1000
-
 
 def _setup_logger(strategy_id: str) -> logging.Logger:
     mode = os.getenv("KIS_MODE", "paper")
@@ -122,21 +112,10 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
                     result = api.buy(code, qty, price=0)
                     log.info(f"[매수] {name}({code}) {qty}주  주문번호={result.get('odno')}")
                     notify_buy(name, code, qty, price, strategy["name"])
-                    # 매수 후 즉시 익절 지정가 주문
-                    tp_order_no, tp_price = None, None
-                    try:
-                        take_profit_pct = strategy["exit"]["take_profit"]
-                        tp_price = _round_to_tick(int(price * (1 + take_profit_pct / 100)))
-                        tp_result = api.sell(code, qty, price=tp_price)
-                        tp_order_no = tp_result.get("odno")
-                        log.info(f"[익절 지정가 주문] {name}({code}) {tp_price:,}원 주문번호={tp_order_no}")
-                    except Exception as e:
-                        log.warning(f"[익절 지정가 주문 실패] {name}({code}): {e} → 모니터링 방식으로 대체")
                     add_position(code, name, price, qty, strategy["id"],
                                  stock.get("execution_strength", 0.0),
                                  stock.get("change_rate", 0.0),
-                                 stock.get("vwap_ratio", 0.0),
-                                 tp_order_no=tp_order_no, tp_price=tp_price)
+                                 stock.get("vwap_ratio", 0.0))
                     bought = True
                     break
                 except Exception as e:
@@ -151,20 +130,10 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
                             if code in held:
                                 log.info(f"[{name}] 500 에러지만 실제 체결 확인 → 재시도 취소, 포지션 등록")
                                 notify_buy(name, code, qty, price, strategy["name"])
-                                tp_order_no, tp_price = None, None
-                                try:
-                                    take_profit_pct = strategy["exit"]["take_profit"]
-                                    tp_price = _round_to_tick(int(price * (1 + take_profit_pct / 100)))
-                                    tp_result = api.sell(code, qty, price=tp_price)
-                                    tp_order_no = tp_result.get("odno")
-                                    log.info(f"[익절 지정가 주문] {name}({code}) {tp_price:,}원 주문번호={tp_order_no}")
-                                except Exception as te:
-                                    log.warning(f"[익절 지정가 주문 실패] {name}({code}): {te} → 모니터링 방식으로 대체")
                                 add_position(code, name, price, qty, strategy["id"],
                                              stock.get("execution_strength", 0.0),
                                              stock.get("change_rate", 0.0),
-                                             stock.get("vwap_ratio", 0.0),
-                                             tp_order_no=tp_order_no, tp_price=tp_price)
+                                             stock.get("vwap_ratio", 0.0))
                                 bought = True
                                 break
                         except Exception:
@@ -204,14 +173,6 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
     log.info(f"[{sid}] === 15:20 장마감 강제매도 시작 ===")
     for pos_key, pos in list(my_pos.items()):
         code = pos.get("code") or pos_key.split("_")[0]
-        # 익절 지정가 주문 취소
-        tp_order_no = pos.get("tp_order_no")
-        if tp_order_no:
-            try:
-                api.cancel_order(tp_order_no, code, pos["qty"])
-                log.info(f"[지정가 취소] {pos['name']}({code}) 주문번호={tp_order_no} ✓")
-            except Exception as e:
-                log.warning(f"[지정가 취소 실패] {pos['name']}({code}): {e}")
         sold = False
         already_sold_by_other = False  # 다른 프로세스가 먼저 매도 완료한 경우
         last_err = None
