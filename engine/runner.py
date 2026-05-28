@@ -316,9 +316,9 @@ def run(strategy_id: str):
     try:
         current_cash = api.get_cash()
         if current_cash > 0:
-            amount = int(current_cash * 0.05)
+            amount = int(current_cash * 0.30)
             strategy["entry"]["amount_per_stock"] = amount
-            log.info(f"[{sid}] 종목당 매수금액: {amount:,}원 (현재 예수금 {current_cash:,}원의 5%)")
+            log.info(f"[{sid}] 종목당 매수금액: {amount:,}원 (현재 예수금 {current_cash:,}원의 30%)")
         else:
             log.info(f"[{sid}] 예수금 조회 결과 0 — 기본값 사용: {strategy['entry']['amount_per_stock']:,}원")
     except Exception as e:
@@ -366,13 +366,17 @@ def run(strategy_id: str):
             continue
 
         if continuous:
-            # 연속진입(v2, v3): 포지션 없을 때마다 매수 시도 (지수 방향은 매수 직전 확인)
+            # 연속진입: 보유 종목이 max_stocks 미만일 때 빈 슬롯만큼 매수 시도
             if entry_t <= t < entry_end_t:
                 my_pos = {k: v for k, v in load_positions().items()
                           if v.get("strategy_id") == sid}
-                if not my_pos:
-                    log.info(f"=== [{sid}] 매수 시도 (연속진입) ===")
+                max_stocks = strategy["entry"]["max_stocks"]
+                available_slots = max_stocks - len(my_pos)
+                if available_slots > 0:
+                    log.info(f"=== [{sid}] 매수 시도 (연속진입, 빈 슬롯 {available_slots}/{max_stocks}) ===")
+                    strategy["entry"]["max_stocks"] = available_slots
                     execute_entry(api, strategy, log, suppress_no_signal=True)
+                    strategy["entry"]["max_stocks"] = max_stocks
         else:
             # 일반(0905/0910/0915): 진입 시간 도달 시 KODEX200 3분봉 확인 후 1회 매수
             if not entry_done and entry_t <= t < entry_t + 1:

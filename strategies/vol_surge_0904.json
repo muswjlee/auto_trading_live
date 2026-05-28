@@ -5,7 +5,9 @@
     "use_market_filter":  false,
     "schedule":  {
                      "entry_time":  "09:04",
-                     "monitor_interval_sec":  1
+                     "entry_end_time":  "10:00",
+                     "monitor_interval_sec":  1,
+                     "continuous_entry":  true
                  },
     "universe":  {
                      "market":  "0",

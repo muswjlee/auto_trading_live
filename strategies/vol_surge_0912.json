@@ -1,7 +1,7 @@
 {
     "id":  "vol_surge_0912",
     "name":  "거래량 급등 + 체결강도 전략 (09:12)",
-    "enabled":  true,
+    "enabled":  false,
     "use_market_filter":  false,
     "schedule":  {
                      "entry_time":  "09:12",
