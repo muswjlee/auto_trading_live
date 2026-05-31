@@ -111,8 +111,15 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
                 try:
                     result = api.buy(code, qty, price=0)
                     log.info(f"[매수] {name}({code}) {qty}주  주문번호={result.get('odno')}")
-                    notify_buy(name, code, qty, price, strategy["name"])
-                    add_position(code, name, price, qty, strategy["id"],
+                    time.sleep(0.5)
+                    actual_price = api.get_avg_buy_price(code)
+                    if actual_price > 0:
+                        log.info(f"[체결가] {name}({code}) 실제 평균매입가 {actual_price:,}원 (스크리닝가 {price:,}원)")
+                    else:
+                        actual_price = price
+                        log.warning(f"[체결가 조회 실패] {name}({code}) 스크리닝가 {price:,}원 사용")
+                    notify_buy(name, code, qty, actual_price, strategy["name"])
+                    add_position(code, name, actual_price, qty, strategy["id"],
                                  stock.get("execution_strength", 0.0),
                                  stock.get("change_rate", 0.0),
                                  stock.get("vwap_ratio", 0.0))
@@ -129,8 +136,9 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
                             held = {s.get("pdno") for s in bal.get("stocks", [])}
                             if code in held:
                                 log.info(f"[{name}] 500 에러지만 실제 체결 확인 → 재시도 취소, 포지션 등록")
-                                notify_buy(name, code, qty, price, strategy["name"])
-                                add_position(code, name, price, qty, strategy["id"],
+                                actual_price = api.get_avg_buy_price(code) or price
+                                notify_buy(name, code, qty, actual_price, strategy["name"])
+                                add_position(code, name, actual_price, qty, strategy["id"],
                                              stock.get("execution_strength", 0.0),
                                              stock.get("change_rate", 0.0),
                                              stock.get("vwap_ratio", 0.0))

@@ -449,3 +449,14 @@ class KISApi:
         )
         res.raise_for_status()
         return res.json()["output"]
+
+    def get_avg_buy_price(self, stock_code: str) -> int:
+        """잔고에서 해당 종목의 실제 평균매입가 조회 (시장가 매수 후 체결가 확인용)"""
+        try:
+            bal = self.get_balance()
+            for s in bal.get("stocks", []):
+                if s.get("pdno") == stock_code:
+                    return int(float(s.get("pchs_avg_pric", 0)))
+        except Exception:
+            pass
+        return 0

@@ -4,8 +4,8 @@
     "enabled":  true,
     "use_market_filter":  false,
     "schedule":  {
-                     "entry_time":  "09:04",
-                     "entry_end_time":  "10:00",
+                     "entry_time":  "09:03",
+                     "entry_end_time":  "09:30",
                      "monitor_interval_sec":  1,
                      "continuous_entry":  true
                  },
