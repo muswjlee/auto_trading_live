@@ -4,9 +4,9 @@
 """
 
 # 거래 부대비용 (KOSPI/KOSDAQ 공통)
-BUY_FEE_RATE  = 0.00015   # 매수 수수료 0.015%
-SELL_FEE_RATE = 0.00015   # 매도 수수료 0.015%
-SELL_TAX_RATE = 0.0018    # 매도 세금  0.18% (증권거래세 0.03% + 농어촌특별세 0.15%)
+BUY_FEE_RATE  = 0.000018  # 매수 수수료 0.0018%
+SELL_FEE_RATE = 0.000018  # 매도 수수료 0.0018%
+SELL_TAX_RATE = 0.002     # 매도 세금  0.2%
 
 import json
 import os
