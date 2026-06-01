@@ -460,3 +460,40 @@ class KISApi:
         except Exception:
             pass
         return 0
+
+    def get_sell_execution_price(self, order_no: str, stock_code: str) -> int:
+        """체결된 매도 주문의 실제 평균 체결가 조회 (주문번호 기반)"""
+        from datetime import date
+        today = date.today().strftime("%Y%m%d")
+        tr_id = "VTTC8001R" if IS_PAPER else "TTTC8001R"
+        try:
+            res = requests.get(
+                f"{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-ccld",
+                headers=self._headers(tr_id),
+                params={
+                    "CANO":           ACCOUNT_NO,
+                    "ACNT_PRDT_CD":   ACCOUNT_CD,
+                    "INQR_STRT_DT":   today,
+                    "INQR_END_DT":    today,
+                    "SLL_BUY_DVSN_CD": "01",  # 01: 매도
+                    "INQR_DVSN":      "00",   # 역순
+                    "PDNO":           stock_code,
+                    "ORD_GNO_BRNO":   "",
+                    "ODNO":           order_no,
+                    "INQR_DVSN_3":    "00",
+                    "INQR_DVSN_1":    "",
+                    "CTX_AREA_FK100": "",
+                    "CTX_AREA_NK100": "",
+                },
+                timeout=_TIMEOUT,
+            )
+            res.raise_for_status()
+            for item in res.json().get("output1", []):
+                if item.get("odno") == order_no:
+                    qty  = int(item.get("tot_ccld_qty", 0))
+                    amt  = int(item.get("tot_ccld_amt", 0))
+                    if qty > 0 and amt > 0:
+                        return amt // qty
+        except Exception:
+            pass
+        return 0

@@ -207,8 +207,10 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
             try:
                 price_info = api.get_price(code)
                 current    = int(price_info["stck_prpr"])
+                order_no   = ""
                 try:
-                    api.sell(code, pos["qty"])
+                    result   = api.sell(code, pos["qty"])
+                    order_no = result.get("odno", "")
                     sold = True
                 except Exception as e:
                     if "잔고내역이 없습니다" in str(e):
@@ -220,9 +222,19 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
                 if sold:
                     try:
                         if not already_sold_by_other:
-                            notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", strategy["name"])
+                            # 실제 매도 체결가 조회
+                            actual_sell_price = current
+                            if order_no:
+                                time.sleep(0.5)
+                                fetched = api.get_sell_execution_price(order_no, code)
+                                if fetched > 0:
+                                    log.info(f"[매도 체결가] {pos['name']}({code}) 실제 체결가 {fetched:,}원 (트리거 시점 {current:,}원)")
+                                    actual_sell_price = fetched
+                                else:
+                                    log.warning(f"[매도 체결가 조회 실패] {pos['name']}({code}) 트리거 시점가 {current:,}원 사용")
+                            notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], actual_sell_price, "장마감 강제매도", strategy["name"])
                             try:
-                                record_trade(pos["name"], code, pos["qty"], pos["buy_price"], current, "장마감 강제매도", sid,
+                                record_trade(pos["name"], code, pos["qty"], pos["buy_price"], actual_sell_price, "장마감 강제매도", sid,
                                              pos.get("execution_strength", 0.0),
                                              pos.get("change_rate", 0.0),
                                              pos.get("vwap_ratio", 0.0))

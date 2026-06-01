@@ -12,7 +12,8 @@
     "universe":  {
                      "market":  "0",
                      "top_volume":  100,
-                     "exclude_etf":  true
+                     "exclude_etf":  true,
+                     "min_price":  10000
                  },
     "entry":  {
                   "min_change_rate":  5.0,
@@ -25,7 +26,7 @@
                   "instant_execution_strength":  true
               },
     "exit":  {
-                 "take_profit":  1.0,
-                 "stop_loss":  -1.0
+                 "take_profit":  0.6,
+                 "stop_loss":  -0.6
              }
 }

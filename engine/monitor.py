@@ -352,10 +352,12 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
     buy_price = pos["buy_price"]
     qty       = pos["qty"]
 
-    sold = False
+    sold     = False
+    order_no = ""
     try:
-        api.sell(code, qty)
-        sold = True
+        result   = api.sell(code, qty)
+        order_no = result.get("odno", "")
+        sold     = True
     except Exception as e:
         err = str(e)
         if "주문 가능한 수량을 초과" in err or "주문가능수량을 초과" in err:
@@ -363,8 +365,9 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
             _cancel_pending_sells(api, code, name)
             time.sleep(1)
             try:
-                api.sell(code, qty)
-                sold = True
+                result   = api.sell(code, qty)
+                order_no = result.get("odno", "")
+                sold     = True
             except Exception as e2:
                 err = str(e2)
                 log.warning(f"[매도 재시도 오류] {name}({code}) [{sid}]: {e2}")
@@ -374,8 +377,9 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
                 time.sleep(5)
                 log.info(f"[{name}({code})] 잔고 없음 재시도 {retry+1}/3")
                 try:
-                    api.sell(code, qty)
-                    sold = True
+                    result   = api.sell(code, qty)
+                    order_no = result.get("odno", "")
+                    sold     = True
                     break
                 except Exception as e2:
                     if "잔고내역이 없습니다" not in str(e2):
@@ -400,10 +404,20 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
                 log.error(f"[매도 실패] {name}({code}): 잔고 확인 오류 {e2}")
 
     if sold:
+        # 실제 매도 체결가 조회 (주문번호 기반)
+        actual_sell_price = current
+        if order_no:
+            time.sleep(0.5)
+            fetched = api.get_sell_execution_price(order_no, code)
+            if fetched > 0:
+                log.info(f"[매도 체결가] {name}({code}) 실제 체결가 {fetched:,}원 (트리거 시점 {current:,}원)")
+                actual_sell_price = fetched
+            else:
+                log.warning(f"[매도 체결가 조회 실패] {name}({code}) 트리거 시점가 {current:,}원 사용")
         try:
-            notify_sell(name, code, qty, buy_price, current, reason, sid)
+            notify_sell(name, code, qty, buy_price, actual_sell_price, reason, sid)
             try:
-                record_trade(name, code, qty, buy_price, current, reason, sid,
+                record_trade(name, code, qty, buy_price, actual_sell_price, reason, sid,
                              pos.get("execution_strength", 0.0),
                              pos.get("change_rate", 0.0),
                              pos.get("vwap_ratio", 0.0))
