@@ -447,9 +447,10 @@ def check_and_exit(api: KISApi, strategies: list):
         strategy = strategy_map.get(pos.get("strategy_id"))
         if not strategy:
             continue  # 다른 전략 프로세스의 포지션 — 조용히 스킵
-        exit_cfg    = strategy["exit"]
-        take_profit = exit_cfg["take_profit"]
-        stop_loss   = exit_cfg["stop_loss"]
+        exit_cfg     = strategy["exit"]
+        take_profit  = exit_cfg["take_profit"]
+        stop_loss    = exit_cfg["stop_loss"]
+        min_hold_sec = exit_cfg.get("min_hold_sec", 0)
         try:
             price_info = api.get_price(code)
             current    = int(price_info["stck_prpr"])
@@ -457,9 +458,21 @@ def check_and_exit(api: KISApi, strategies: list):
             pnl_pct    = (current - buy_price) / buy_price * 100
             sid        = pos.get("strategy_id", "")
 
+            # 보유시간 계산
+            hold_sec = 0
+            bought_at_str = pos.get("bought_at", "")
+            if bought_at_str:
+                from datetime import datetime as _dt
+                today = _dt.now().date()
+                bought_dt = _dt.strptime(bought_at_str, "%H:%M:%S").replace(
+                    year=today.year, month=today.month, day=today.day
+                )
+                hold_sec = (_dt.now() - bought_dt).total_seconds()
+
             log.info(
                 f"[모니터] {pos['name']}({code}) [{sid}] "
                 f"매입 {buy_price:,} → 현재 {current:,} ({pnl_pct:+.2f}%)"
+                + (f" 보유 {hold_sec:.0f}초" if min_hold_sec > 0 else "")
             )
 
             if pnl_pct >= take_profit:
@@ -467,8 +480,11 @@ def check_and_exit(api: KISApi, strategies: list):
                 _sell_with_verify(api, pos, pos_key, current, "익절", sid)
 
             elif pnl_pct <= stop_loss:
-                log.info(f"[손절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
-                _sell_with_verify(api, pos, pos_key, current, "손절", sid)
+                if min_hold_sec > 0 and hold_sec < min_hold_sec:
+                    log.info(f"[손절 유예] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% — 보유 {hold_sec:.0f}초 < {min_hold_sec}초")
+                else:
+                    log.info(f"[손절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
+                    _sell_with_verify(api, pos, pos_key, current, "손절", sid)
 
             time.sleep(0.1)
 
