@@ -68,6 +68,11 @@ def is_etf(name: str) -> bool:
 def is_inverse(name: str) -> bool:
     return "인버스" in name
 
+def is_derivatives_etf(name: str) -> bool:
+    """파생ETF 여부 — 단일종목레버리지·선물단일종목 등 파생상품 기반 ETF"""
+    n = name
+    return "단일종목레버리지" in n or "선물단일종목" in n or "선물레버리지" in n
+
 
 def get_execution_strength(api: KISApi, stock_code: str, instant: bool = False) -> float:
     if instant:
@@ -105,6 +110,9 @@ def _build_volume_candidates(api: KISApi, univ: dict, entry: dict) -> list[dict]
             continue
         if is_inverse(s["name"]):
             log.info(f"  {s['name']} 인버스 → 제외")
+            continue
+        if is_derivatives_etf(s["name"]):
+            log.info(f"  {s['name']} 파생ETF → 제외")
             continue
         if exclude_etf and is_etf(s["name"]):
             log.info(f"  {s['name']} ETF → 제외")
