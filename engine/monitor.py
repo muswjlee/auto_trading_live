@@ -261,7 +261,7 @@ def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int
         if data.get("date") != today:
             # 이전 날 데이터 아카이브
             if data.get("date") and data.get("trades"):
-                archive_path = PNL_FILE.replace("daily_pnl.json", f"pnl_{data['date']}.json")
+                archive_path = os.path.join(os.path.dirname(PNL_FILE), f"pnl_{data['date']}.json")
                 with open(archive_path, "w", encoding="utf-8") as af:
                     json.dump(data, af, ensure_ascii=False, indent=2)
                 _append_strategy_history(data)
@@ -356,7 +356,7 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
     order_no = ""
     try:
         result   = api.sell(code, qty)
-        order_no = result.get("odno", "")
+        order_no = result.get("ODNO") or result.get("odno", "")
         sold     = True
     except Exception as e:
         err = str(e)
@@ -366,7 +366,7 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
             time.sleep(1)
             try:
                 result   = api.sell(code, qty)
-                order_no = result.get("odno", "")
+                order_no = result.get("ODNO") or result.get("odno", "")
                 sold     = True
             except Exception as e2:
                 err = str(e2)
@@ -378,7 +378,7 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
                 log.info(f"[{name}({code})] 잔고 없음 재시도 {retry+1}/3")
                 try:
                     result   = api.sell(code, qty)
-                    order_no = result.get("odno", "")
+                    order_no = result.get("ODNO") or result.get("odno", "")
                     sold     = True
                     break
                 except Exception as e2:

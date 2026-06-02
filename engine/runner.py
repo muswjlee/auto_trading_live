@@ -210,7 +210,7 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
                 order_no   = ""
                 try:
                     result   = api.sell(code, pos["qty"])
-                    order_no = result.get("odno", "")
+                    order_no = result.get("ODNO") or result.get("odno", "")
                     sold = True
                 except Exception as e:
                     if "잔고내역이 없습니다" in str(e):
