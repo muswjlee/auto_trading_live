@@ -79,11 +79,16 @@ def _ensure_single_instance(log) -> bool:
 def _send_daily_summary(log):
     """전략별 당일 손익 합산 요약 텔레그램 전송"""
     try:
+        from datetime import date as _date
         pnl_file = os.path.join(_BASE, f"daily_pnl_{_MODE}.json")
         with open(pnl_file, encoding="utf-8") as f:
             data = json.load(f)
         trades = data.get("trades", [])
         today  = data.get("date", "")
+
+        if today != str(_date.today()):
+            log.info(f"[결산 생략] pnl 날짜({today})가 오늘({_date.today()})과 불일치 — 휴장일 또는 당일 거래 없음")
+            return
 
         from collections import defaultdict
         by_strat = defaultdict(list)
