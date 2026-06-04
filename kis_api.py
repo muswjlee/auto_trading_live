@@ -468,32 +468,31 @@ class KISApi:
         tr_id = "VTTC8001R" if IS_PAPER else "TTTC8001R"
         try:
             res = requests.get(
-                f"{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-ccld",
+                f"{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
                 headers=self._headers(tr_id),
                 params={
-                    "CANO":           ACCOUNT_NO,
-                    "ACNT_PRDT_CD":   ACCOUNT_CD,
-                    "INQR_STRT_DT":   today,
-                    "INQR_END_DT":    today,
-                    "SLL_BUY_DVSN_CD": "01",  # 01: 매도
-                    "INQR_DVSN":      "00",   # 역순
-                    "PDNO":           stock_code,
-                    "ORD_GNO_BRNO":   "",
-                    "ODNO":           order_no,
-                    "INQR_DVSN_3":    "00",
-                    "INQR_DVSN_1":    "",
-                    "CTX_AREA_FK100": "",
-                    "CTX_AREA_NK100": "",
+                    "CANO":            ACCOUNT_NO,
+                    "ACNT_PRDT_CD":    ACCOUNT_CD,
+                    "INQR_STRT_DT":    today,
+                    "INQR_END_DT":     today,
+                    "SLL_BUY_DVSN_CD": "01",
+                    "INQR_DVSN":       "00",
+                    "PDNO":            stock_code,
+                    "ORD_GNO_BRNO":    "",
+                    "ODNO":            order_no,
+                    "INQR_DVSN_3":     "00",
+                    "INQR_DVSN_1":     "",
+                    "CTX_AREA_FK100":  "",
+                    "CTX_AREA_NK100":  "",
                 },
                 timeout=_TIMEOUT,
             )
             res.raise_for_status()
             for item in res.json().get("output1", []):
                 if item.get("odno") == order_no:
-                    qty  = int(item.get("tot_ccld_qty", 0))
-                    amt  = int(item.get("tot_ccld_amt", 0))
-                    if qty > 0 and amt > 0:
-                        return amt // qty
+                    avg = int(item.get("avg_prvs", 0))
+                    if avg > 0:
+                        return avg
         except Exception:
             pass
         return 0
