@@ -13,7 +13,8 @@
                      "market":  "0",
                      "top_volume":  100,
                      "exclude_etf":  true,
-                     "min_price":  10000
+                     "min_price":  10000,
+                     "max_price":  300000
                  },
     "entry":  {
                   "min_change_rate":  5.0,
