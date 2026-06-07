@@ -73,6 +73,9 @@ def is_derivatives_etf(name: str) -> bool:
     n = name
     return "단일종목레버리지" in n or "선물단일종목" in n or "선물레버리지" in n
 
+# 시스템 외 개인 보유 종목 — 매수 대상에서 영구 제외
+_PERSONAL_HOLDINGS = {"005935", "491700", "0162Z0"}
+
 
 def get_execution_strength(api: KISApi, stock_code: str, instant: bool = False) -> float:
     if instant:
@@ -103,6 +106,9 @@ def _build_volume_candidates(api: KISApi, univ: dict, entry: dict) -> list[dict]
 
     candidates = []
     for s in volume_stocks:
+        if s["code"] in _PERSONAL_HOLDINGS:
+            log.info(f"  {s['name']}({s['code']}) 개인 보유 종목 → 제외")
+            continue
         if not (min_change <= s["change_rate"] <= max_change):
             continue
         if is_etn(s["name"]):

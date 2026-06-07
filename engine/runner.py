@@ -309,6 +309,31 @@ def _is_trading_day(d=None) -> bool:
         return False
 
 
+_PERSONAL_HOLDINGS = {"005935", "491700", "0162Z0"}  # 시스템 외 개인 보유 종목
+
+def _validate_positions_on_startup(api: KISApi, sid: str, log):
+    """시작 시 positions 파일과 실제 잔고를 비교해 유령 포지션 제거"""
+    from engine.monitor import load_positions, remove_position
+    positions = load_positions()
+    my_pos = {k: v for k, v in positions.items()
+              if v.get("strategy_id") == sid and not v.get("_reserved")}
+    if not my_pos:
+        return
+    try:
+        bal = api.get_balance()
+        held_codes = {s.get("pdno") for s in bal.get("stocks", [])}
+    except Exception as e:
+        log.warning(f"[포지션 검증] 잔고 조회 실패 ({e}) — 검증 생략")
+        return
+    for pos_key, pos in my_pos.items():
+        code = pos.get("code") or pos_key.split("_")[0]
+        if code in _PERSONAL_HOLDINGS:
+            continue
+        if code not in held_codes:
+            log.warning(f"[포지션 검증] {pos.get('name', code)}({code}) 실제 잔고 없음 → 유령 포지션 제거")
+            remove_position(pos_key)
+
+
 def run(strategy_id: str):
     strategy = load_strategy(strategy_id)
     log      = _setup_logger(strategy_id)
@@ -331,6 +356,9 @@ def run(strategy_id: str):
         entry_end_t  = h_end * 100 + m_end
 
     api = KISApi()
+
+    # 시작 시 유령 포지션 검증 — 실제 잔고에 없는 포지션 제거
+    _validate_positions_on_startup(api, sid, log)
 
     # 당일 예수금 기반 종목당 매수금액 동적 설정 (10%)
     try:
