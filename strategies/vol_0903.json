@@ -1,0 +1,33 @@
+{
+    "id":  "vol_0903",
+    "name":  "거래량 급등 + 체결강도 전략 (09:03)",
+    "enabled":  true,
+    "use_market_filter":  false,
+    "schedule":  {
+                     "entry_time":  "09:03",
+                     "entry_end_time":  "09:30",
+                     "monitor_interval_sec":  1,
+                     "continuous_entry":  true
+                 },
+    "universe":  {
+                     "market":  "0",
+                     "top_volume":  100,
+                     "exclude_etf":  true,
+                     "min_price":  10000
+                 },
+    "entry":  {
+                  "min_change_rate":  5.0,
+                  "max_change_rate":  10.0,
+                  "sort_by":  "execution_strength",
+                  "max_stocks":  3,
+                  "amount_per_stock":  1000000,
+                  "order_type":  "market",
+                  "min_execution_strength":  120,
+                  "instant_execution_strength":  true
+              },
+    "exit":  {
+                 "take_profit":  0.6,
+                 "stop_loss":  -0.6,
+                 "min_hold_sec":  60
+             }
+}
