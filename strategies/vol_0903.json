@@ -20,7 +20,7 @@
                   "max_change_rate":  15.0,
                   "sort_by":  "execution_strength",
                   "max_stocks":  3,
-                  "amount_per_stock":  1000000,
+                  "amount_per_stock":  300000,
                   "order_type":  "market",
                   "min_execution_strength":  null,
                   "instant_execution_strength":  false

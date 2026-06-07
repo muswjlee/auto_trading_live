@@ -21,7 +21,7 @@
     "instant_execution_strength": true,
     "sort_by": "execution_strength",
     "max_stocks": 1,
-    "amount_per_stock": 1000000,
+    "amount_per_stock": 300000,
     "order_type": "market"
   },
   "exit": {

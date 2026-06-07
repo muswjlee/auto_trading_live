@@ -362,17 +362,7 @@ def run(strategy_id: str):
     # 시작 시 유령 포지션 검증 — 실제 잔고에 없는 포지션 제거
     _validate_positions_on_startup(api, sid, log)
 
-    # 당일 예수금 기반 종목당 매수금액 동적 설정 (10%)
-    try:
-        current_cash = api.get_cash()
-        if current_cash > 0:
-            amount = int(current_cash * 0.30)
-            strategy["entry"]["amount_per_stock"] = amount
-            log.info(f"[{sid}] 종목당 매수금액: {amount:,}원 (현재 예수금 {current_cash:,}원의 30%)")
-        else:
-            log.info(f"[{sid}] 예수금 조회 결과 0 — 기본값 사용: {strategy['entry']['amount_per_stock']:,}원")
-    except Exception as e:
-        log.warning(f"[{sid}] 예수금 조회 실패 ({e}) — 기본값 사용: {strategy['entry']['amount_per_stock']:,}원")
+    log.info(f"[{sid}] 종목당 매수금액: {strategy['entry']['amount_per_stock']:,}원")
 
     log.info(f"[{sid}] 프로세스 시작 | 진입: {strategy['schedule']['entry_time']}"
              + (" (연속진입)" if continuous else ""))
