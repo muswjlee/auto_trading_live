@@ -251,6 +251,8 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
         if not sold and last_err:
             log.error(f"[장마감 강제매도 최종 실패] {pos_key}: {last_err}")
             notify_error(f"장마감 강제매도 실패 {pos['name']}({code}): {last_err}")
+            remove_position(pos_key)
+            log.warning(f"[유령 포지션 방지] {pos['name']}({code}) 강제매도 실패 — 포지션 파일에서 제거")
 
 
 # ── 전략별 미니 결산 ──────────────────────────────────────────────────────
