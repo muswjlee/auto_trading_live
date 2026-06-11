@@ -1,7 +1,7 @@
 {
   "id": "vol_surge_fulltime_v2",
   "name": "거래량 급등 풀타임 V2",
-  "enabled": true,
+  "enabled": false,
   "schedule": {
     "entry_time": "14:00",
     "entry_end_time": "15:00",

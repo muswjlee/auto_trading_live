@@ -92,16 +92,20 @@ def is_upper_limit(price_info: dict) -> bool:
 # ── 유니버스 빌더 ──────────────────────────────────────────────────────────
 
 def _build_volume_candidates(api: KISApi, univ: dict, entry: dict) -> list[dict]:
-    """거래량 상위 종목 조회 후 등락률 필터"""
-    log.info("거래량 상위 종목 조회 중...")
+    """거래량/거래대금 상위 종목 조회 후 등락률 필터"""
+    by_turnover = "top_turnover" in univ
+    top_n       = univ.get("top_turnover") or univ.get("top_volume", 100)
+    label       = "거래대금" if by_turnover else "거래량"
+    log.info(f"{label} 상위 {top_n} 종목 조회 중...")
     volume_stocks = api.get_volume_rank(
-        top_n=univ["top_volume"],
+        top_n=top_n,
         market=univ.get("market", "0"),
         min_price=univ.get("min_price", 0),
         max_price=univ.get("max_price", 0),
+        by_turnover=by_turnover,
     )
-    min_change  = entry["min_change_rate"]
-    max_change  = entry.get("max_change_rate", 100.0)
+    min_change  = entry.get("min_change_rate")
+    max_change  = entry.get("max_change_rate")
     exclude_etf = univ.get("exclude_etf", False)
 
     candidates = []
@@ -109,7 +113,9 @@ def _build_volume_candidates(api: KISApi, univ: dict, entry: dict) -> list[dict]
         if s["code"] in _PERSONAL_HOLDINGS:
             log.info(f"  {s['name']}({s['code']}) 개인 보유 종목 → 제외")
             continue
-        if not (min_change <= s["change_rate"] <= max_change):
+        if min_change is not None and s["change_rate"] < min_change:
+            continue
+        if max_change is not None and s["change_rate"] > max_change:
             continue
         if is_etn(s["name"]):
             log.info(f"  {s['name']} ETN → 제외")
@@ -124,7 +130,7 @@ def _build_volume_candidates(api: KISApi, univ: dict, entry: dict) -> list[dict]
             log.info(f"  {s['name']} ETF → 제외")
             continue
         candidates.append(s)
-    log.info(f"등락률 {min_change}% ~ {max_change}% 필터 후: {len(candidates)}개")
+    log.info(f"등락률 필터 후: {len(candidates)}개")
     return candidates
 
 
@@ -202,15 +208,71 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
     for s in candidates:
         try:
             price_info   = api.get_price(s["code"])
+            current_price = int(price_info["stck_prpr"])
             strength     = get_execution_strength(api, s["code"], instant=instant_strength)
             min_strength = entry.get("min_execution_strength")
             if min_strength is not None and strength < min_strength:
                 log.info(f"  {s['name']} 체결강도 {strength} < {min_strength} → 제외")
                 continue
+
+            # 누적 체결강도 (min_accumulated_execution_strength)
+            min_acc_strength = entry.get("min_accumulated_execution_strength")
+            if min_acc_strength is not None:
+                acc = strength if not instant_strength else api.get_execution_strength(s["code"])
+                if acc < min_acc_strength:
+                    log.info(f"  {s['name']} 누적 체결강도 {acc} < {min_acc_strength} → 제외")
+                    continue
+
             at_limit = is_upper_limit(price_info)
 
             vwap = float(price_info.get("wghn_avrg_stck_prc", 0) or 0)
-            vwap_ratio = round(int(price_info["stck_prpr"]) / vwap * 100, 2) if vwap > 0 else 0.0
+            vwap_ratio = round(current_price / vwap * 100, 2) if vwap > 0 else 0.0
+
+            # 현재가 > VWAP 조건
+            if entry.get("require_above_vwap") and vwap > 0:
+                if current_price <= vwap:
+                    log.info(f"  {s['name']} 현재가 {current_price:,} ≤ VWAP {vwap:,.0f} → 제외")
+                    continue
+
+            # 당일 고가 근접 조건
+            near_high_pct = entry.get("near_day_high_pct")
+            if near_high_pct is not None:
+                day_high = int(price_info.get("stck_hgpr", 0))
+                if day_high > 0:
+                    threshold = day_high * (1 - near_high_pct / 100)
+                    if current_price < threshold:
+                        log.info(f"  {s['name']} 현재가 {current_price:,} < 당일고가 {day_high:,}의 {100 - near_high_pct:.1f}% → 제외")
+                        continue
+
+            # 30초 순간 체결강도
+            min_inst_30s = entry.get("instant_execution_strength_30s")
+            if min_inst_30s is not None:
+                inst_30s = api.get_instant_execution_strength(s["code"], window_sec=30)
+                if inst_30s < min_inst_30s:
+                    log.info(f"  {s['name']} 30초 체결강도 {inst_30s:.1f} < {min_inst_30s} → 제외")
+                    continue
+                log.info(f"  {s['name']} 30초 체결강도 {inst_30s:.1f} ✓")
+
+            # 1분 거래대금 / 최근 5분 평균 비율
+            min_1min_ratio = entry.get("min_1min_turnover_ratio")
+            if min_1min_ratio is not None:
+                try:
+                    candles = api.get_minute_candles(s["code"], count=6)
+                    if len(candles) >= 2:
+                        recent_tv = int(candles[0].get("cntg_vol", 0)) * int(candles[0].get("stck_prpr", 0) or current_price)
+                        prev_tvs  = [
+                            int(c.get("cntg_vol", 0)) * int(c.get("stck_prpr", 0) or current_price)
+                            for c in candles[1:]
+                        ]
+                        avg_tv = sum(prev_tvs) / len(prev_tvs) if prev_tvs else 0
+                        if avg_tv > 0:
+                            tv_ratio = recent_tv / avg_tv
+                            if tv_ratio < min_1min_ratio:
+                                log.info(f"  {s['name']} 1분 거래대금 배율 {tv_ratio:.1f} < {min_1min_ratio} → 제외")
+                                continue
+                            log.info(f"  {s['name']} 1분 거래대금 배율 {tv_ratio:.1f} ✓")
+                except Exception as ce:
+                    log.warning(f"  {s['name']} 분봉 조회 실패 → 조건 미적용: {ce}")
 
             min_vwap_ratio = entry.get("min_vwap_ratio")
             if min_vwap_ratio is not None and vwap_ratio > 0:
@@ -288,7 +350,7 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
             result.append({
                 "code":               s["code"],
                 "name":               s["name"],
-                "price":              int(price_info["stck_prpr"]),
+                "price":              current_price,
                 "change_rate":        s.get("change_rate", 0),
                 "execution_strength": strength,
                 "vwap_ratio":         vwap_ratio,

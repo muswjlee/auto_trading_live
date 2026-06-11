@@ -1,7 +1,7 @@
 {
   "id": "vol_surge_fulltime_v3",
   "name": "거래량 급등 풀타임 V3 (ETF 포함)",
-  "enabled": true,
+  "enabled": false,
   "schedule": {
     "entry_time": "14:00",
     "entry_end_time": "15:00",

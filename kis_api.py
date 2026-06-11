@@ -88,8 +88,8 @@ class KISApi:
                     time.sleep(1.0 * (attempt + 1))
         raise last_err
 
-    def _fetch_volume_rank_page(self, market: str, min_price: int, max_price: int, min_volume: int) -> list[dict]:
-        """단일 시장 거래량 상위 30개 조회 (내부용)"""
+    def _fetch_volume_rank_page(self, market: str, min_price: int, max_price: int, min_volume: int, div_cls_code: str = "0") -> list[dict]:
+        """단일 시장 거래량/거래대금 상위 30개 조회 (내부용)"""
         res = requests.get(
             f"{BASE_URL}/uapi/domestic-stock/v1/quotations/volume-rank",
             headers=self._headers("FHPST01710000"),
@@ -97,7 +97,7 @@ class KISApi:
                 "FID_COND_MRKT_DIV_CODE": "J",
                 "FID_COND_SCR_DIV_CODE": "20171",
                 "FID_INPUT_ISCD": "0000",
-                "FID_DIV_CLS_CODE": "0",
+                "FID_DIV_CLS_CODE": div_cls_code,
                 "FID_BLNG_CLS_CODE": market,
                 "FID_TRGT_CLS_CODE": "111111111",
                 "FID_TRGT_EXLS_CLS_CODE": "000000",
@@ -114,15 +114,19 @@ class KISApi:
     def get_volume_rank(
         self,
         top_n: int = 100,
-        market: str = "0",       # 0: 전체, 1: 코스피, 2: 코스닥
+        market: str = "0",          # 0: 전체, 1: 코스피, 2: 코스닥
         min_price: int = 0,
         max_price: int = 0,
         min_volume: int = 0,
+        by_turnover: bool = False,  # True: 거래대금 기준, False: 거래량 기준
     ) -> list[dict]:
         """
-        거래량 상위 종목 조회 (최대 100개)
-        API 1회 호출 한계(30개)를 코스피/코스닥/ETF 분리 호출로 우회 후 거래량 기준 정렬
+        거래량/거래대금 상위 종목 조회 (최대 100개)
+        API 1회 호출 한계(30개)를 코스피/코스닥/ETF 분리 호출로 우회 후 정렬
         """
+        div_cls_code = "1" if by_turnover else "0"
+        sort_field   = "acml_tr_pbmn" if by_turnover else "acml_vol"
+
         # 요청 시장에 따라 호출할 세부 시장 코드 결정
         # 1: 코스피, 2: 코스닥, 3: ELW, 4: ETF, 5: KONEX
         if market == "0":
@@ -134,7 +138,7 @@ class KISApi:
         raw_all = []
         for mkt in markets:
             try:
-                page = self._fetch_volume_rank_page(mkt, min_price, max_price, min_volume)
+                page = self._fetch_volume_rank_page(mkt, min_price, max_price, min_volume, div_cls_code)
             except Exception:
                 time.sleep(0.2)
                 continue
@@ -145,8 +149,7 @@ class KISApi:
                     seen_codes.add(code)
                     raw_all.append(item)
 
-        # 거래량 내림차순 정렬 후 top_n 개 추출
-        raw_all.sort(key=lambda x: int(x.get("acml_vol", 0)), reverse=True)
+        raw_all.sort(key=lambda x: int(x.get(sort_field, 0)), reverse=True)
 
         result = []
         for rank, item in enumerate(raw_all[:top_n], start=1):
@@ -224,8 +227,9 @@ class KISApi:
                 time.sleep(0.3)
         return 0.0
 
-    def get_instant_execution_strength(self, stock_code: str) -> float:
-        """순간 체결강도: 최근 30틱 기준 매수/매도 체결량 비율
+    def get_instant_execution_strength(self, stock_code: str, window_sec: int = None) -> float:
+        """순간 체결강도: 최근 틱 기준 매수/매도 체결량 비율
+        - window_sec: 시간 창(초). None이면 전체 틱 사용, 30이면 최근 30초 틱만 사용.
         - 가격 상승 틱 → 매수 체결, 하락 틱 → 매도 체결 (Lee-Ready 방식)
         - 동일 가격은 직전 방향 유지
         """
@@ -242,10 +246,11 @@ class KISApi:
                 if not ticks:
                     continue
 
+                now = datetime.now()
+
                 # 최신 틱이 60초 이상 오래됐으면 stale → 모멘텀 없음
                 recent_hour = ticks[0].get("stck_cntg_hour", "")
                 if len(recent_hour) == 6:
-                    now = datetime.now()
                     tick_time = now.replace(
                         hour=int(recent_hour[:2]),
                         minute=int(recent_hour[2:4]),
@@ -254,6 +259,26 @@ class KISApi:
                     )
                     if (now - tick_time).total_seconds() > 60:
                         return 0.0
+
+                # 시간 창 필터 (window_sec 지정 시)
+                if window_sec is not None:
+                    cutoff = now - timedelta(seconds=window_sec)
+                    filtered = []
+                    for t in ticks:
+                        th = t.get("stck_cntg_hour", "")
+                        if len(th) == 6:
+                            try:
+                                tt = now.replace(
+                                    hour=int(th[:2]), minute=int(th[2:4]),
+                                    second=int(th[4:6]), microsecond=0,
+                                )
+                                if tt >= cutoff:
+                                    filtered.append(t)
+                            except ValueError:
+                                pass
+                    if not filtered:
+                        return 0.0
+                    ticks = filtered
 
                 buy_vol = sell_vol = 0
                 last_dir = None
@@ -310,6 +335,7 @@ class KISApi:
                 "FID_INPUT_ISCD": stock_code,
                 "FID_INPUT_HOUR_1": now,
                 "FID_PW_DATA_INCU_YN": "N",
+                "FID_ETC_CLS_CODE": "",
             },
             timeout=_TIMEOUT,
         )

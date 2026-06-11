@@ -117,6 +117,7 @@ def add_position(code: str, name: str, buy_price: int, qty: int, strategy_id: st
             "change_rate": change_rate,
             "vwap_ratio": vwap_ratio,
             "bought_at": _dt.now().strftime("%H:%M:%S"),
+            "tp_step": 0,
         }
         with open(POSITION_FILE, "w", encoding="utf-8") as f:
             json.dump(positions, f, ensure_ascii=False, indent=2)
@@ -133,6 +134,21 @@ def remove_position(pos_key: str):
         positions.pop(pos_key, None)
         with open(POSITION_FILE, "w", encoding="utf-8") as f:
             json.dump(positions, f, ensure_ascii=False, indent=2)
+
+
+def update_position_qty(pos_key: str, new_qty: int, tp_step: int):
+    """분할 익절 후 보유 수량 및 TP 단계 업데이트"""
+    with _POS_LOCK:
+        try:
+            with open(POSITION_FILE, "r", encoding="utf-8") as f:
+                positions = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            positions = {}
+        if pos_key in positions:
+            positions[pos_key]["qty"]     = new_qty
+            positions[pos_key]["tp_step"] = tp_step
+            with open(POSITION_FILE, "w", encoding="utf-8") as f:
+                json.dump(positions, f, ensure_ascii=False, indent=2)
 
 
 # ── 전략별 히스토리 ────────────────────────────────────────────────────────
@@ -345,12 +361,17 @@ def _cancel_pending_sells(api: KISApi, code: str, name: str):
 
 
 def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
-                      current: int, reason: str, sid: str) -> bool:
-    """매도 실행 — 500에러 시 잔고 확인으로 체결 여부 판단 후 position 정리"""
+                      current: int, reason: str, sid: str,
+                      sell_qty: int = None, new_tp_step: int = None) -> bool:
+    """매도 실행 — 500에러 시 잔고 확인으로 체결 여부 판단 후 position 정리
+    sell_qty: 지정 시 분할 매도 (None이면 전량 매도)
+    new_tp_step: 분할 매도 후 다음 TP 단계 (None이면 포지션 전체 제거)
+    """
     code      = pos.get("code") or pos_key.split("_")[0]
     name      = pos["name"]
     buy_price = pos["buy_price"]
-    qty       = pos["qty"]
+    qty       = sell_qty if sell_qty is not None else pos["qty"]
+    is_partial = sell_qty is not None and sell_qty < pos["qty"]
 
     sold     = False
     order_no = ""
@@ -423,13 +444,18 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
                              pos.get("vwap_ratio", 0.0))
             except Exception as e:
                 log.error(f"[손익 기록 실패] {name}({code}): {e}")
-            if reason == "손절":
+            if reason in ("손절", "VWAP손절", "시간손절"):
                 try:
                     add_sl_blacklist(code, name)
                 except Exception as e:
                     log.error(f"[블랙리스트 등록 실패] {name}({code}): {e}")
         finally:
-            remove_position(pos_key)
+            if is_partial and new_tp_step is not None:
+                remaining = pos["qty"] - qty
+                update_position_qty(pos_key, remaining, new_tp_step)
+                log.info(f"[분할 익절] {name}({code}) [{sid}] {qty}주 매도 완료, {remaining}주 잔여 (다음 TP {new_tp_step}단계)")
+            else:
+                remove_position(pos_key)
 
     return sold
 
@@ -447,16 +473,22 @@ def check_and_exit(api: KISApi, strategies: list):
         strategy = strategy_map.get(pos.get("strategy_id"))
         if not strategy:
             continue  # 다른 전략 프로세스의 포지션 — 조용히 스킵
+
         exit_cfg     = strategy["exit"]
-        take_profit  = exit_cfg["take_profit"]
         stop_loss    = exit_cfg["stop_loss"]
         min_hold_sec = exit_cfg.get("min_hold_sec", 0)
+        tp_steps     = exit_cfg.get("take_profit_steps")        # 분할 익절
+        take_profit  = exit_cfg.get("take_profit")              # 단일 익절 (기존)
+        vwap_sl      = exit_cfg.get("vwap_stop_loss", False)    # VWAP 이탈 손절
+        time_limit   = exit_cfg.get("time_limit_stop")          # 시간 기반 손절
+
         try:
             price_info = api.get_price(code)
             current    = int(price_info["stck_prpr"])
             buy_price  = pos["buy_price"]
             pnl_pct    = (current - buy_price) / buy_price * 100
             sid        = pos.get("strategy_id", "")
+            vwap       = float(price_info.get("wghn_avrg_stck_prc", 0) or 0)
 
             # 보유시간 계산
             hold_sec = 0
@@ -469,22 +501,70 @@ def check_and_exit(api: KISApi, strategies: list):
                 )
                 hold_sec = (_dt.now() - bought_dt).total_seconds()
 
+            show_hold = min_hold_sec > 0 or time_limit is not None
             log.info(
                 f"[모니터] {pos['name']}({code}) [{sid}] "
                 f"매입 {buy_price:,} → 현재 {current:,} ({pnl_pct:+.2f}%)"
-                + (f" 보유 {hold_sec:.0f}초" if min_hold_sec > 0 else "")
+                + (f" 보유 {hold_sec:.0f}초" if show_hold else "")
             )
 
-            if pnl_pct >= take_profit:
+            exited = False
+
+            # ── 익절 ──────────────────────────────────────────────────────
+            if tp_steps:
+                # 분할 익절
+                tp_step = pos.get("tp_step", 0)
+                if tp_step < len(tp_steps):
+                    step = tp_steps[tp_step]
+                    if pnl_pct >= step["pct"]:
+                        qty      = pos["qty"]
+                        next_idx = tp_step + 1
+                        is_last  = next_idx >= len(tp_steps)
+                        single_full = exit_cfg.get("single_share_full_exit_at_step1", True)
+
+                        if is_last or (tp_step == 0 and qty == 1 and single_full):
+                            sell_qty    = qty
+                            new_tp_step = None
+                        else:
+                            sell_qty    = max(1, int(qty * step["sell_ratio"]))
+                            new_tp_step = next_idx
+
+                        reason = f"익절{tp_step + 1}차"
+                        log.info(f"[{reason}] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → {sell_qty}주 매도")
+                        _sell_with_verify(api, pos, pos_key, current, reason, sid,
+                                          sell_qty=sell_qty, new_tp_step=new_tp_step)
+                        exited = True
+
+            elif take_profit is not None and pnl_pct >= take_profit:
+                # 단일 익절 (기존 전략)
                 log.info(f"[익절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
                 _sell_with_verify(api, pos, pos_key, current, "익절", sid)
+                exited = True
 
-            elif pnl_pct <= stop_loss:
-                if min_hold_sec > 0 and hold_sec < min_hold_sec:
-                    log.info(f"[손절 유예] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% — 보유 {hold_sec:.0f}초 < {min_hold_sec}초")
-                else:
-                    log.info(f"[손절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
-                    _sell_with_verify(api, pos, pos_key, current, "손절", sid)
+            # ── 손절 (익절하지 않은 경우만) ───────────────────────────────
+            if not exited:
+                # 가격 기반 손절
+                if pnl_pct <= stop_loss:
+                    if min_hold_sec > 0 and hold_sec < min_hold_sec:
+                        log.info(f"[손절 유예] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% — 보유 {hold_sec:.0f}초 < {min_hold_sec}초")
+                    else:
+                        log.info(f"[손절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
+                        _sell_with_verify(api, pos, pos_key, current, "손절", sid)
+                        exited = True
+
+                # VWAP 이탈 손절
+                if not exited and vwap_sl and vwap > 0 and current < vwap:
+                    log.info(f"[VWAP손절] {pos['name']}({code}) [{sid}] 현재가 {current:,} < VWAP {vwap:,.0f}")
+                    _sell_with_verify(api, pos, pos_key, current, "VWAP손절", sid)
+                    exited = True
+
+                # 시간 기반 손절 (N분 내 수익률 미달)
+                if not exited and time_limit:
+                    limit_sec   = time_limit["minutes"] * 60
+                    min_profit  = time_limit["min_profit_pct"]
+                    if hold_sec >= limit_sec and pnl_pct < min_profit:
+                        log.info(f"[시간손절] {pos['name']}({code}) [{sid}] {hold_sec / 60:.1f}분 보유, {pnl_pct:+.2f}% < {min_profit}%")
+                        _sell_with_verify(api, pos, pos_key, current, "시간손절", sid)
 
             time.sleep(0.1)
 
