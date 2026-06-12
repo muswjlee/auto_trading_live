@@ -1,7 +1,7 @@
 {
   "id": "momentum_1330",
   "name": "모멘텀 전략 (13:30-14:50)",
-  "enabled": false,
+  "enabled": true,
   "schedule": {
     "entry_time": "13:30",
     "entry_end_time": "14:50",
