@@ -1,7 +1,7 @@
 {
   "id": "momentum_0910",
   "name": "모멘텀 전략 (09:10-09:20)",
-  "enabled": false,
+  "enabled": true,
   "schedule": {
     "entry_time": "09:10",
     "entry_end_time": "09:20",
