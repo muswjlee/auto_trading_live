@@ -222,73 +222,60 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
 
     instant_strength = entry.get("instant_execution_strength", False)
 
-    result = []
-    for s in candidates:
+    def _check_stock(s: dict):
         try:
-            price_info   = api.get_price(s["code"])
+            price_info    = api.get_price(s["code"])
             current_price = int(price_info["stck_prpr"])
 
             strength     = get_execution_strength(api, s["code"], instant=instant_strength)
             min_strength = entry.get("min_execution_strength")
             if min_strength is not None and strength < min_strength:
                 log.info(f"  {s['name']} 체결강도 {strength} < {min_strength} → 제외")
-                continue
+                return None
 
-            # 누적 체결강도 (min_accumulated_execution_strength)
             min_acc_strength = entry.get("min_accumulated_execution_strength")
             if min_acc_strength is not None:
                 acc = strength if not instant_strength else api.get_execution_strength(s["code"])
                 if acc < min_acc_strength:
                     log.info(f"  {s['name']} 누적 체결강도 {acc} < {min_acc_strength} → 제외")
-                    continue
+                    return None
 
-            at_limit = is_upper_limit(price_info)
-
-            vwap = float(price_info.get("wghn_avrg_stck_prc", 0) or 0)
+            at_limit   = is_upper_limit(price_info)
+            vwap       = float(price_info.get("wghn_avrg_stck_prc", 0) or 0)
             vwap_ratio = round(current_price / vwap * 100, 2) if vwap > 0 else 0.0
 
-            # 현재가 > VWAP 조건
-            if entry.get("require_above_vwap") and vwap > 0:
-                if current_price <= vwap:
-                    log.info(f"  {s['name']} 현재가 {current_price:,} ≤ VWAP {vwap:,.0f} → 제외")
-                    continue
+            if entry.get("require_above_vwap") and vwap > 0 and current_price <= vwap:
+                log.info(f"  {s['name']} 현재가 {current_price:,} ≤ VWAP {vwap:,.0f} → 제외")
+                return None
 
-            # 당일 고가 근접 조건
             near_high_pct = entry.get("near_day_high_pct")
             if near_high_pct is not None:
                 day_high = int(price_info.get("stck_hgpr", 0))
-                if day_high > 0:
-                    threshold = day_high * (1 - near_high_pct / 100)
-                    if current_price < threshold:
-                        log.info(f"  {s['name']} 현재가 {current_price:,} < 당일고가 {day_high:,}의 {100 - near_high_pct:.1f}% → 제외")
-                        continue
+                if day_high > 0 and current_price < day_high * (1 - near_high_pct / 100):
+                    log.info(f"  {s['name']} 현재가 {current_price:,} < 당일고가 {day_high:,}의 {100 - near_high_pct:.1f}% → 제외")
+                    return None
 
-            # 30초 순간 체결강도
             min_inst_30s = entry.get("instant_execution_strength_30s")
             if min_inst_30s is not None:
                 inst_30s = api.get_instant_execution_strength(s["code"], window_sec=30)
                 if inst_30s < min_inst_30s:
                     log.info(f"  {s['name']} 30초 체결강도 {inst_30s:.1f} < {min_inst_30s} → 제외")
-                    continue
+                    return None
                 log.info(f"  {s['name']} 30초 체결강도 {inst_30s:.1f} ✓")
 
-            # 1분 거래대금 / 최근 5분 평균 비율
             min_1min_ratio = entry.get("min_1min_turnover_ratio")
             if min_1min_ratio is not None:
                 try:
                     candles = api.get_minute_candles(s["code"], count=6)
                     if len(candles) >= 2:
                         recent_tv = int(candles[0].get("cntg_vol", 0)) * int(candles[0].get("stck_prpr", 0) or current_price)
-                        prev_tvs  = [
-                            int(c.get("cntg_vol", 0)) * int(c.get("stck_prpr", 0) or current_price)
-                            for c in candles[1:]
-                        ]
-                        avg_tv = sum(prev_tvs) / len(prev_tvs) if prev_tvs else 0
+                        prev_tvs  = [int(c.get("cntg_vol", 0)) * int(c.get("stck_prpr", 0) or current_price) for c in candles[1:]]
+                        avg_tv    = sum(prev_tvs) / len(prev_tvs) if prev_tvs else 0
                         if avg_tv > 0:
                             tv_ratio = recent_tv / avg_tv
                             if tv_ratio < min_1min_ratio:
                                 log.info(f"  {s['name']} 1분 거래대금 배율 {tv_ratio:.1f} < {min_1min_ratio} → 제외")
-                                continue
+                                return None
                             log.info(f"  {s['name']} 1분 거래대금 배율 {tv_ratio:.1f} ✓")
                 except Exception as ce:
                     log.warning(f"  {s['name']} 분봉 조회 실패 → 조건 미적용: {ce}")
@@ -297,76 +284,64 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
             if min_vwap_ratio is not None and vwap_ratio > 0:
                 if vwap_ratio < min_vwap_ratio:
                     log.info(f"  {s['name']} 현재가/VWAP {vwap_ratio:.1f} < {min_vwap_ratio} → 제외")
-                    continue
+                    return None
                 log.info(f"  {s['name']} 현재가/VWAP {vwap_ratio:.1f} ✓")
 
-            per, pbr   = None, None
+            per, pbr = None, None
 
             if min_volume_ratio is not None:
                 acml_vol = int(price_info.get("acml_vol", 0))
                 prdy_vol = int(price_info.get("prdy_vol", 0))
                 if prdy_vol <= 0:
-                    # 전일이 휴장인 경우 → OHLCV에서 가장 최근 개장일 거래량 사용
                     try:
-                        ohlcv = api.get_ohlcv(s["code"], count=5)
-                        prdy_vol = next(
-                            (int(o.get("acml_vol", 0)) for o in ohlcv if int(o.get("acml_vol", 0)) > 0),
-                            0,
-                        )
+                        ohlcv    = api.get_ohlcv(s["code"], count=5)
+                        prdy_vol = next((int(o.get("acml_vol", 0)) for o in ohlcv if int(o.get("acml_vol", 0)) > 0), 0)
                     except Exception:
                         prdy_vol = 0
                 if prdy_vol <= 0:
                     log.info(f"  {s['name']} 최근 거래량 없음 → 제외")
-                    continue
+                    return None
                 vol_ratio = acml_vol / prdy_vol
                 if vol_ratio < min_volume_ratio:
                     log.info(f"  {s['name']} 거래량비율 {vol_ratio:.1%} < {min_volume_ratio:.1%} → 제외")
-                    continue
+                    return None
                 log.info(f"  {s['name']} 거래량비율 {vol_ratio:.1%} ✓")
 
             if use_fundamental:
                 per = float(price_info.get("per", 0) or 0)
                 pbr = float(price_info.get("pbr", 0) or 0)
                 if min_per is not None and per < min_per:
-                    log.info(f"  {s['name']} PER {per} < {min_per} → 제외")
-                    continue
+                    log.info(f"  {s['name']} PER {per} < {min_per} → 제외"); return None
                 if max_per is not None and per > max_per:
-                    log.info(f"  {s['name']} PER {per} > {max_per} → 제외")
-                    continue
+                    log.info(f"  {s['name']} PER {per} > {max_per} → 제외"); return None
                 if min_pbr is not None and pbr < min_pbr:
-                    log.info(f"  {s['name']} PBR {pbr} < {min_pbr} → 제외")
-                    continue
+                    log.info(f"  {s['name']} PBR {pbr} < {min_pbr} → 제외"); return None
                 if max_pbr is not None and pbr > max_pbr:
-                    log.info(f"  {s['name']} PBR {pbr} > {max_pbr} → 제외")
-                    continue
+                    log.info(f"  {s['name']} PBR {pbr} > {max_pbr} → 제외"); return None
 
             rsi_val, macd_cross = None, None
             if use_indicators:
                 candles = api.get_ohlcv(s["code"], count=40)
                 closes  = [float(c["stck_clpr"]) for c in candles]
                 closes.reverse()
-
-                rsi_cfg  = indicator_cfg.get("rsi", {})
-                macd_cfg = indicator_cfg.get("macd", {})
-                rsi_val  = calc_rsi(closes, period=rsi_cfg.get("period", 14))
-                macd_result = calc_macd(
-                    closes,
-                    fast=macd_cfg.get("fast", 12),
-                    slow=macd_cfg.get("slow", 26),
-                    signal=macd_cfg.get("signal", 9),
-                )
-                macd_cross = macd_result["golden_cross"]
-
-                oversold = rsi_cfg.get("oversold", 35)
-                if rsi_val >= oversold:
-                    log.info(f"  {s['name']} RSI {rsi_val} >= {oversold} → 제외")
-                    continue
+                rsi_cfg     = indicator_cfg.get("rsi", {})
+                macd_cfg    = indicator_cfg.get("macd", {})
+                rsi_val     = calc_rsi(closes, period=rsi_cfg.get("period", 14))
+                macd_result = calc_macd(closes, fast=macd_cfg.get("fast", 12), slow=macd_cfg.get("slow", 26), signal=macd_cfg.get("signal", 9))
+                macd_cross  = macd_result["golden_cross"]
+                if rsi_val >= rsi_cfg.get("oversold", 35):
+                    log.info(f"  {s['name']} RSI {rsi_val} >= {rsi_cfg.get('oversold', 35)} → 제외"); return None
                 if not macd_cross:
-                    log.info(f"  {s['name']} MACD 골든크로스 미충족 → 제외")
-                    continue
-                time.sleep(0.1)
+                    log.info(f"  {s['name']} MACD 골든크로스 미충족 → 제외"); return None
 
-            result.append({
+            log.info(
+                f"  {s['name']}({s['code']}) 등락률 {s.get('change_rate', 0)}%"
+                f" 체결강도 {strength} VWAP비율 {vwap_ratio:.1f}"
+                + (f" PER {per}" if per else "") + (f" PBR {pbr}" if pbr else "")
+                + (f" RSI {rsi_val}" if rsi_val is not None else "")
+                + (" MACD_GC" if macd_cross else "") + (" [상한가]" if at_limit else "")
+            )
+            return {
                 "code":               s["code"],
                 "name":               s["name"],
                 "price":              current_price,
@@ -378,19 +353,19 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
                 "pbr":                pbr,
                 "rsi":                rsi_val,
                 "macd_cross":         macd_cross,
-            })
-            log.info(
-                f"  {s['name']}({s['code']}) 등락률 {s.get('change_rate', 0)}%"
-                f" 체결강도 {strength} VWAP비율 {vwap_ratio:.1f}"
-                + (f" PER {per}" if per else "")
-                + (f" PBR {pbr}" if pbr else "")
-                + (f" RSI {rsi_val}" if rsi_val is not None else "")
-                + (" MACD_GC" if macd_cross else "")
-                + (" [상한가]" if at_limit else "")
-            )
-            time.sleep(0.1)
+            }
         except Exception as e:
             log.warning(f"  {s['code']} 조회 오류: {e}")
+            return None
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    result = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(_check_stock, s): s for s in candidates}
+        for future in as_completed(futures):
+            r = future.result()
+            if r is not None:
+                result.append(r)
 
     result.sort(key=lambda x: x["execution_strength"], reverse=True)
 
