@@ -91,19 +91,37 @@ def is_upper_limit(price_info: dict) -> bool:
 
 # ── 유니버스 빌더 ──────────────────────────────────────────────────────────
 
+_universe_cache: dict[str, tuple[float, list[dict]]] = {}  # key → (ts, stocks)
+_UNIVERSE_TTL = 60  # 거래대금 universe는 60초 캐시
+
 def _build_volume_candidates(api: KISApi, univ: dict, entry: dict) -> list[dict]:
-    """거래량/거래대금 상위 종목 조회 후 등락률 필터"""
+    """거래량/거래대금 상위 종목 조회 후 등락률 필터 (universe 60초 캐시)"""
     by_turnover = "top_turnover" in univ
     top_n       = univ.get("top_turnover") or univ.get("top_volume", 100)
     label       = "거래대금" if by_turnover else "거래량"
-    log.info(f"{label} 상위 {top_n} 종목 조회 중...")
-    volume_stocks = api.get_volume_rank(
-        top_n=top_n,
-        market=univ.get("market", "0"),
-        min_price=univ.get("min_price", 0),
-        max_price=univ.get("max_price", 0),
-        by_turnover=by_turnover,
-    )
+
+    cache_key = f"{by_turnover}:{top_n}:{univ.get('market','0')}:{univ.get('min_price',0)}:{univ.get('max_price',0)}"
+    now = time.time()
+    if cache_key in _universe_cache:
+        ts, cached = _universe_cache[cache_key]
+        if now - ts < _UNIVERSE_TTL:
+            log.info(f"{label} 상위 {top_n} 종목 캐시 사용 ({int(now-ts)}초 전)")
+            volume_stocks = cached
+        else:
+            volume_stocks = None
+    else:
+        volume_stocks = None
+
+    if volume_stocks is None:
+        log.info(f"{label} 상위 {top_n} 종목 조회 중...")
+        volume_stocks = api.get_volume_rank(
+            top_n=top_n,
+            market=univ.get("market", "0"),
+            min_price=univ.get("min_price", 0),
+            max_price=univ.get("max_price", 0),
+            by_turnover=by_turnover,
+        )
+        _universe_cache[cache_key] = (now, volume_stocks)
     min_change  = entry.get("min_change_rate")
     max_change  = entry.get("max_change_rate")
     exclude_etf = univ.get("exclude_etf", False)
