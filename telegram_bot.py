@@ -58,18 +58,25 @@ def is_watchdog_running() -> bool:
 
 
 def get_running_strategies() -> list[str]:
+    """watchdog.pid 기반으로 자식 프로세스(runner)에서 전략 ID 추출"""
     import psutil
-    strategies = []
-    for proc in psutil.process_iter(["pid", "cmdline"]):
-        try:
-            cmdline = " ".join(proc.info["cmdline"] or [])
-            if "runner.py" in cmdline:
-                parts = proc.info["cmdline"]
-                sid = parts[-1] if parts else "unknown"
-                strategies.append(sid)
-        except Exception:
-            pass
-    return strategies
+    pid_file = os.path.join(_BASE, "watchdog.pid")
+    try:
+        with open(pid_file) as f:
+            pid = int(f.read().strip())
+        parent = psutil.Process(pid)
+        strategies = []
+        for child in parent.children(recursive=True):
+            try:
+                cmdline = child.cmdline()
+                if "runner.py" in " ".join(cmdline):
+                    sid = cmdline[-1] if cmdline else "unknown"
+                    strategies.append(sid)
+            except Exception:
+                pass
+        return strategies
+    except Exception:
+        return []
 
 
 def cmd_start():
@@ -144,18 +151,44 @@ def cmd_status():
 
 
 def cmd_stop():
+    """watchdog.pid 기반으로 watchdog + 모든 자식(runner) 프로세스 종료"""
     import psutil
     killed = []
-    for proc in psutil.process_iter(["pid", "cmdline"]):
+    pid_file = os.path.join(_BASE, "watchdog.pid")
+
+    # watchdog PID 파일로 프로세스 트리 종료
+    try:
+        with open(pid_file) as f:
+            pid = int(f.read().strip())
+        parent = psutil.Process(pid)
+        for child in parent.children(recursive=True):
+            try:
+                child.kill()
+                killed.append(f"runner(PID:{child.pid})")
+            except Exception:
+                pass
+        parent.kill()
+        killed.append(f"watchdog(PID:{pid})")
         try:
-            cmdline = " ".join(proc.info["cmdline"] or [])
-            if ("watchdog.py" in cmdline or "runner.py" in cmdline) and "telegram_bot" not in cmdline:
-                proc.kill()
-                killed.append(proc.info["cmdline"][-1] if proc.info["cmdline"] else str(proc.pid))
+            os.remove(pid_file)
         except Exception:
             pass
+    except Exception:
+        pass
+
+    # fallback: cmdline 검색 (PID 파일이 없을 경우)
+    if not killed:
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                cmdline = " ".join(proc.info["cmdline"] or [])
+                if ("watchdog.py" in cmdline or "runner.py" in cmdline) and "telegram_bot" not in cmdline:
+                    proc.kill()
+                    killed.append(str(proc.pid))
+            except Exception:
+                pass
+
     if killed:
-        send(f"🛑 자동매매 시스템을 종료했습니다.\n종료된 프로세스: {len(killed)}개")
+        send(f"🛑 자동매매 시스템을 종료했습니다. ({len(killed)}개 프로세스 종료)")
         log.info(f"프로세스 종료: {killed}")
     else:
         send("ℹ️ 실행 중인 자동매매 프로세스가 없습니다.")
