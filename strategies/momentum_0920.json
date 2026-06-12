@@ -10,8 +10,7 @@
   },
   "universe": {
     "market": "0",
-    "top_volume": 100,
-    "min_turnover": 20000000000,
+    "top_turnover": 100,
     "exclude_etf": true,
     "min_price": 10000,
     "max_price": 300000
