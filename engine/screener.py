@@ -204,11 +204,20 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
 
     instant_strength = entry.get("instant_execution_strength", False)
 
+    min_turnover = univ.get("min_turnover")  # 최소 당일 거래대금 (원)
+
     result = []
     for s in candidates:
         try:
             price_info   = api.get_price(s["code"])
             current_price = int(price_info["stck_prpr"])
+
+            # 최소 거래대금 필터 (inquire-price의 acml_tr_pbmn 사용 — HTS 기준과 일치)
+            if min_turnover is not None:
+                turnover = int(price_info.get("acml_tr_pbmn", 0))
+                if turnover < min_turnover:
+                    log.info(f"  {s['name']} 거래대금 {turnover/100000000:.0f}억 < {min_turnover/100000000:.0f}억 → 제외")
+                    continue
             strength     = get_execution_strength(api, s["code"], instant=instant_strength)
             min_strength = entry.get("min_execution_strength")
             if min_strength is not None and strength < min_strength:
