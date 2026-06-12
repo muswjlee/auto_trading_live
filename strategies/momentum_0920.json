@@ -19,7 +19,7 @@
     "min_accumulated_execution_strength": 120,
     "require_above_vwap": true,
     "near_day_high_pct": 0.5,
-    "min_execution_strength": 250,
+    "min_execution_strength": 120,
     "instant_execution_strength": true,
     "min_1min_turnover_ratio": 3.0,
     "sort_by": "execution_strength",
