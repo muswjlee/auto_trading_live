@@ -111,6 +111,55 @@ class KISApi:
         res.raise_for_status()
         return res.json().get("output", [])
 
+    @staticmethod
+    def _make_price_bands(p_min: int, p_max: int) -> list[tuple[int, int]]:
+        """가격 범위를 여러 구간으로 분할 (각 구간 내 거래량 ≈ 거래대금 순서)"""
+        FIXED_BREAKS = [10_000, 15_000, 25_000, 40_000, 70_000, 120_000, 200_000, 300_000, 500_000]
+        breaks = sorted({p_min} | {b for b in FIXED_BREAKS if p_min < b < p_max} | {p_max})
+        return [(breaks[i], breaks[i + 1]) for i in range(len(breaks) - 1)]
+
+    def _get_top_by_turnover(self, top_n: int, min_price: int, max_price: int) -> list[dict]:
+        """
+        코스피/코스닥 각각 가격대별 분할 조회(~200개 풀) 후 acml_tr_pbmn 기준 top_n 추출
+        가격대를 7개 구간으로 나눠 구간별 거래량 top30 수집 → 각 시장 ~210개 → 합산 정렬
+        """
+        p_min  = max(min_price, 1_000)
+        p_max  = max_price if max_price > 0 else 500_000
+        bands  = self._make_price_bands(p_min, p_max)
+
+        seen_codes: set[str] = set()
+        raw_all: list[dict]  = []
+
+        for mkt in ["1", "2"]:                      # 코스피, 코스닥
+            for band_min, band_max in bands:
+                try:
+                    page = self._fetch_volume_rank_page(mkt, band_min, band_max, 0, "0")
+                    for item in page:
+                        code = item.get("mksc_shrn_iscd", "")
+                        if code and code not in seen_codes:
+                            seen_codes.add(code)
+                            raw_all.append(item)
+                except Exception:
+                    pass
+                time.sleep(0.1)
+
+        raw_all.sort(key=lambda x: int(x.get("acml_tr_pbmn", 0)), reverse=True)
+
+        result = []
+        for rank, item in enumerate(raw_all[:top_n], start=1):
+            result.append({
+                "rank":        rank,
+                "code":        item.get("mksc_shrn_iscd", ""),
+                "name":        item.get("hts_kor_isnm", ""),
+                "price":       int(item.get("stck_prpr", 0)),
+                "volume":      int(item.get("acml_vol", 0)),
+                "change":      int(item.get("prdy_vrss", 0)),
+                "change_rate": float(item.get("prdy_ctrt", 0)),
+                "high":        int(item.get("stck_hgpr", 0)),
+                "low":         int(item.get("stck_lwpr", 0)),
+            })
+        return result
+
     def get_volume_rank(
         self,
         top_n: int = 100,
@@ -120,17 +169,13 @@ class KISApi:
         min_volume: int = 0,
         by_turnover: bool = False,  # True: 거래대금 기준, False: 거래량 기준
     ) -> list[dict]:
-        """
-        거래량/거래대금 상위 종목 조회 (최대 100개)
-        API 1회 호출 한계(30개)를 코스피/코스닥/ETF 분리 호출로 우회 후 정렬
-        """
-        div_cls_code = "1" if by_turnover else "0"
-        sort_field   = "acml_tr_pbmn" if by_turnover else "acml_vol"
+        """거래량/거래대금 상위 종목 조회"""
+        if by_turnover:
+            return self._get_top_by_turnover(top_n, min_price, max_price)
 
-        # 요청 시장에 따라 호출할 세부 시장 코드 결정
-        # 1: 코스피, 2: 코스닥, 3: ELW, 4: ETF, 5: KONEX
+        # 거래량 기준: 기존 로직 유지
         if market == "0":
-            markets = ["0", "1", "2", "3", "4", "5"]  # "0" 전체 통합 top30 추가
+            markets = ["0", "1", "2", "3", "4", "5"]
         else:
             markets = [market]
 
@@ -138,7 +183,7 @@ class KISApi:
         raw_all = []
         for mkt in markets:
             try:
-                page = self._fetch_volume_rank_page(mkt, min_price, max_price, min_volume, div_cls_code)
+                page = self._fetch_volume_rank_page(mkt, min_price, max_price, min_volume, "0")
             except Exception:
                 time.sleep(0.2)
                 continue
@@ -149,7 +194,7 @@ class KISApi:
                     seen_codes.add(code)
                     raw_all.append(item)
 
-        raw_all.sort(key=lambda x: int(x.get(sort_field, 0)), reverse=True)
+        raw_all.sort(key=lambda x: int(x.get("acml_vol", 0)), reverse=True)
 
         result = []
         for rank, item in enumerate(raw_all[:top_n], start=1):
