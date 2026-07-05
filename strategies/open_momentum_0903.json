@@ -1,0 +1,31 @@
+{
+  "id": "open_momentum_0903",
+  "name": "오전 거래량 모멘텀 (09:03)",
+  "enabled": true,
+  "type": "open_momentum",
+  "schedule": {
+    "entry_slots": ["09:03", "09:10", "09:20", "09:30",
+                    "09:40", "09:50", "10:00"],
+    "entry_end_time": "10:01",
+    "monitor_interval_sec": 5
+  },
+  "universe": {
+    "top_n": 100,
+    "min_change_rate": 5.0,
+    "max_change_rate": 10.0,
+    "min_price": 0,
+    "max_price": 100000
+  },
+  "entry": {
+    "max_stocks": 3,
+    "qty_per_stock": 1,
+    "reserve_cash": 4000000,
+    "order_type": "market"
+  },
+  "exit": {
+    "tp_pct": 1.0,
+    "tp_pct_after_1h": 0.5,
+    "sl_pct": 3.0,
+    "force_exit_time": "15:20"
+  }
+}

@@ -1,7 +1,8 @@
 {
   "id": "momentum_1330",
   "name": "모멘텀 전략 (13:30-14:50)",
-  "enabled": true,
+  "enabled": false,
+  "use_market_filter": false,
   "schedule": {
     "entry_time": "13:30",
     "entry_end_time": "14:50",
@@ -16,11 +17,10 @@
     "max_price": 300000
   },
   "entry": {
-    "min_accumulated_execution_strength": 120,
+    "min_accumulated_execution_strength": 100,
+    "exec_strength_trend_minutes": 3,
     "require_above_vwap": true,
     "near_day_high_pct": 0.5,
-    "min_execution_strength": 120,
-    "instant_execution_strength": true,
     "min_1min_turnover_ratio": 3.0,
     "sort_by": "execution_strength",
     "max_stocks": 3,
@@ -35,9 +35,7 @@
       "min_profit_pct": 0.3
     },
     "take_profit_steps": [
-      {"pct": 1.0, "sell_ratio": 0.5},
-      {"pct": 2.0, "sell_ratio": 0.5}
-    ],
-    "single_share_full_exit_at_step1": true
+      {"pct": 1.0, "sell_ratio": 1.0}
+    ]
   }
 }

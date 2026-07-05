@@ -323,7 +323,8 @@ def cmd_strategy():
             ent      = s.get("entry", {})
             ext      = s.get("exit", {})
 
-            entry_t  = sch.get("entry_time", "-")
+            slots    = sch.get("entry_slots", [])
+            entry_t  = slots[0] if slots else sch.get("entry_time", "-")
             end_t    = sch.get("entry_end_time", "")
             time_str = f"{entry_t}~{end_t}" if end_t else entry_t
             cont     = "연속" if sch.get("continuous_entry") else "1회"

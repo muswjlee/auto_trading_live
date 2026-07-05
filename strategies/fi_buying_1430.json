@@ -1,0 +1,27 @@
+{
+  "id": "fi_buying_1430",
+  "name": "외국인·기관 순매수 전략",
+  "enabled": false,
+  "type": "fi_buying",
+  "schedule": {
+    "screen_time": "21:00",
+    "entry_time": "09:05"
+  },
+  "universe": {
+    "top_n_turnover": 100,
+    "min_price": 1000,
+    "max_price": 500000
+  },
+  "filter": {
+    "top_n": 3
+  },
+  "entry": {
+    "qty": 1,
+    "require_above_prev_close": true
+  },
+  "exit": {
+    "tp_pct": 1.0,
+    "sl_pct": 1.0,
+    "force_exit_time": "15:20"
+  }
+}

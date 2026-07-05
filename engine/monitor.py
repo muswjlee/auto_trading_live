@@ -77,7 +77,8 @@ def load_positions() -> dict:
 
 
 def reserve_or_skip(code: str, strategy_id: str) -> bool:
-    """다른 전략이 보유/예약 중이면 False, 아니면 즉시 예약 후 True 반환 (원자적)"""
+    """같은 전략이 이미 보유/예약 중이면 False, 아니면 즉시 예약 후 True 반환 (원자적)
+    전략별 독립 보유를 허용하므로 다른 전략의 동일 종목은 차단하지 않음"""
     pos_key = f"{code}_{strategy_id}"
     with _POS_LOCK:
         try:
@@ -85,8 +86,7 @@ def reserve_or_skip(code: str, strategy_id: str) -> bool:
                 positions = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             positions = {}
-        held = {v["code"] for v in positions.values()}
-        if code in held:
+        if pos_key in positions:
             return False
         positions[pos_key] = {"code": code, "strategy_id": strategy_id, "_reserved": True}
         with open(POSITION_FILE, "w", encoding="utf-8") as f:
@@ -134,6 +134,20 @@ def remove_position(pos_key: str):
         positions.pop(pos_key, None)
         with open(POSITION_FILE, "w", encoding="utf-8") as f:
             json.dump(positions, f, ensure_ascii=False, indent=2)
+
+
+def update_position_extra(pos_key: str, fields: dict):
+    """포지션에 추가 필드 업데이트 (bought_date 등)"""
+    with _POS_LOCK:
+        try:
+            with open(POSITION_FILE, "r", encoding="utf-8") as f:
+                positions = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return
+        if pos_key in positions:
+            positions[pos_key].update(fields)
+            with open(POSITION_FILE, "w", encoding="utf-8") as f:
+                json.dump(positions, f, ensure_ascii=False, indent=2)
 
 
 def update_position_qty(pos_key: str, new_qty: int, tp_step: int):
@@ -310,10 +324,10 @@ def record_trade(name: str, code: str, qty: int, buy_price: int, sell_price: int
             json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def is_code_held(code: str) -> bool:
-    """해당 종목이 이미 어떤 전략에서든 보유 중인지 확인 (크로스 전략 중복 매수 방지)"""
+def is_code_held(code: str, strategy_id: str) -> bool:
+    """해당 전략이 이미 해당 종목을 보유/예약 중인지 확인 (전략 내 중복 매수 방지)"""
     positions = load_positions()
-    return any(v["code"] == code for v in positions.values())
+    return f"{code}_{strategy_id}" in positions
 
 
 def load_daily_pnl() -> dict:
@@ -362,10 +376,12 @@ def _cancel_pending_sells(api: KISApi, code: str, name: str):
 
 def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
                       current: int, reason: str, sid: str,
-                      sell_qty: int = None, new_tp_step: int = None) -> bool:
-    """매도 실행 — 500에러 시 잔고 확인으로 체결 여부 판단 후 position 정리
+                      sell_qty: int = None, new_tp_step: int = None,
+                      wait_sec: int = 5) -> bool:
+    """bid_price_1 지정가 매도 → 미체결 시 정정 1회 → 시장가 fallback
     sell_qty: 지정 시 분할 매도 (None이면 전량 매도)
     new_tp_step: 분할 매도 후 다음 TP 단계 (None이면 포지션 전체 제거)
+    wait_sec: 미체결 대기 시간 (전략 exit.unfilled_wait_sec)
     """
     code      = pos.get("code") or pos_key.split("_")[0]
     name      = pos["name"]
@@ -373,10 +389,20 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
     qty       = sell_qty if sell_qty is not None else pos["qty"]
     is_partial = sell_qty is not None and sell_qty < pos["qty"]
 
+    # bid_price_1 조회
+    bid1 = current
+    try:
+        ob = api.get_orderbook(code)
+        b  = int(ob.get("bidp1", 0))
+        if b > 0:
+            bid1 = b
+    except Exception:
+        pass
+
     sold     = False
     order_no = ""
     try:
-        result   = api.sell(code, qty)
+        result   = api.sell(code, qty, price=bid1)
         order_no = result.get("ODNO") or result.get("odno", "")
         sold     = True
     except Exception as e:
@@ -386,19 +412,21 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
             _cancel_pending_sells(api, code, name)
             time.sleep(1)
             try:
-                result   = api.sell(code, qty)
+                ob2  = api.get_orderbook(code)
+                bid2 = int(ob2.get("bidp1", bid1))
+                result   = api.sell(code, qty, price=bid2)
                 order_no = result.get("ODNO") or result.get("odno", "")
                 sold     = True
+                bid1     = bid2
             except Exception as e2:
                 err = str(e2)
                 log.warning(f"[매도 재시도 오류] {name}({code}) [{sid}]: {e2}")
         if not sold and "잔고내역이 없습니다" in err:
-            # 매수 직후 VTS 잔고 미반영일 수 있으므로 재시도
             for retry in range(3):
                 time.sleep(5)
                 log.info(f"[{name}({code})] 잔고 없음 재시도 {retry+1}/3")
                 try:
-                    result   = api.sell(code, qty)
+                    result   = api.sell(code, qty, price=bid1)
                     order_no = result.get("ODNO") or result.get("odno", "")
                     sold     = True
                     break
@@ -407,7 +435,6 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
                         log.warning(f"[매도 재시도 오류] {name}({code}): {e2}")
                         break
             else:
-                # 3회 재시도 후에도 잔고 없음 → 다른 프로세스가 이미 매도
                 log.warning(f"[{name}({code})] 잔고 없음 (3회 재시도) → 이미 매도된 포지션, 기록 없이 제거")
                 remove_position(pos_key)
                 return False
@@ -423,6 +450,37 @@ def _sell_with_verify(api: KISApi, pos: dict, pos_key: str,
                     log.error(f"[매도 실패] {name}({code}) [{sid}]: 잔고 확인 결과 여전히 보유 중 — 다음 주기 재시도")
             except Exception as e2:
                 log.error(f"[매도 실패] {name}({code}): 잔고 확인 오류 {e2}")
+
+    # 지정가 미체결 처리: wait_sec 대기 → 정정 → 시장가 fallback
+    if sold and order_no:
+        time.sleep(wait_sec)
+        try:
+            pending     = api.get_pending_orders()
+            is_unfilled = any(p.get("odno") == order_no for p in pending)
+            if is_unfilled:
+                ob2  = api.get_orderbook(code)
+                bid2 = int(ob2.get("bidp1", bid1))
+                log.info(f"  [지정가 미체결] {name}({code}) → 정정 {bid1:,}→{bid2:,}원")
+                try:
+                    r2       = api.modify_order(order_no, code, qty, bid2)
+                    order_no = r2.get("odno", order_no)
+                except Exception:
+                    pass
+                time.sleep(wait_sec)
+                pending2     = api.get_pending_orders()
+                is_unfilled2 = any(p.get("odno") == order_no for p in pending2)
+                if is_unfilled2:
+                    log.info(f"  재정정 후도 미체결 → 시장가 강제 매도")
+                    _cancel_pending_sells(api, code, name)
+                    time.sleep(0.5)
+                    try:
+                        r3       = api.sell(code, qty, price=0)
+                        order_no = r3.get("odno", "") or r3.get("ODNO", "")
+                        time.sleep(2.0)
+                    except Exception as e3:
+                        log.error(f"  시장가 fallback 실패: {e3}")
+        except Exception as pe:
+            log.warning(f"  미체결 확인 오류: {pe}")
 
     if sold:
         # 실제 매도 체결가 조회 (주문번호 기반)
@@ -481,6 +539,7 @@ def check_and_exit(api: KISApi, strategies: list):
         take_profit  = exit_cfg.get("take_profit")              # 단일 익절 (기존)
         vwap_sl      = exit_cfg.get("vwap_stop_loss", False)    # VWAP 이탈 손절
         time_limit   = exit_cfg.get("time_limit_stop")          # 시간 기반 손절
+        exit_wait    = exit_cfg.get("unfilled_wait_sec", 5)     # 지정가 매도 미체결 대기
 
         try:
             price_info = api.get_price(code)
@@ -532,13 +591,13 @@ def check_and_exit(api: KISApi, strategies: list):
                         reason = f"익절{tp_step + 1}차"
                         log.info(f"[{reason}] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → {sell_qty}주 매도")
                         _sell_with_verify(api, pos, pos_key, current, reason, sid,
-                                          sell_qty=sell_qty, new_tp_step=new_tp_step)
+                                          sell_qty=sell_qty, new_tp_step=new_tp_step, wait_sec=exit_wait)
                         exited = True
 
             elif take_profit is not None and pnl_pct >= take_profit:
                 # 단일 익절 (기존 전략)
                 log.info(f"[익절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
-                _sell_with_verify(api, pos, pos_key, current, "익절", sid)
+                _sell_with_verify(api, pos, pos_key, current, "익절", sid, wait_sec=exit_wait)
                 exited = True
 
             # ── 손절 (익절하지 않은 경우만) ───────────────────────────────
@@ -549,13 +608,13 @@ def check_and_exit(api: KISApi, strategies: list):
                         log.info(f"[손절 유예] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% — 보유 {hold_sec:.0f}초 < {min_hold_sec}초")
                     else:
                         log.info(f"[손절] {pos['name']}({code}) [{sid}] {pnl_pct:+.2f}% → 매도")
-                        _sell_with_verify(api, pos, pos_key, current, "손절", sid)
+                        _sell_with_verify(api, pos, pos_key, current, "손절", sid, wait_sec=exit_wait)
                         exited = True
 
                 # VWAP 이탈 손절
                 if not exited and vwap_sl and vwap > 0 and current < vwap:
                     log.info(f"[VWAP손절] {pos['name']}({code}) [{sid}] 현재가 {current:,} < VWAP {vwap:,.0f}")
-                    _sell_with_verify(api, pos, pos_key, current, "VWAP손절", sid)
+                    _sell_with_verify(api, pos, pos_key, current, "VWAP손절", sid, wait_sec=exit_wait)
                     exited = True
 
                 # 시간 기반 손절 (N분 내 수익률 미달)
@@ -564,7 +623,7 @@ def check_and_exit(api: KISApi, strategies: list):
                     min_profit  = time_limit["min_profit_pct"]
                     if hold_sec >= limit_sec and pnl_pct < min_profit:
                         log.info(f"[시간손절] {pos['name']}({code}) [{sid}] {hold_sec / 60:.1f}분 보유, {pnl_pct:+.2f}% < {min_profit}%")
-                        _sell_with_verify(api, pos, pos_key, current, "시간손절", sid)
+                        _sell_with_verify(api, pos, pos_key, current, "시간손절", sid, wait_sec=exit_wait)
 
             time.sleep(0.1)
 

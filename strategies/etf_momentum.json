@@ -1,0 +1,35 @@
+{
+  "id": "etf_momentum",
+  "name": "ETF 모멘텀 전략",
+  "enabled": true,
+  "type": "etf",
+  "schedule": {
+    "screen_day": "Friday",
+    "screen_time": "21:00",
+    "entry_time": "09:01"
+  },
+  "etfs": [
+{"code": "091160", "name": "KODEX 반도체"},
+    {"code": "466920", "name": "SOL 조선TOP3플러스"},
+    {"code": "449450", "name": "PLUS K방산"},
+    {"code": "487240", "name": "KODEX AI전력핵심설비"},
+    {"code": "364980", "name": "TIGER 2차전지TOP10"},
+    {"code": "091180", "name": "KODEX 자동차"},
+    {"code": "091170", "name": "KODEX 은행"}
+  ],
+  "momentum": {
+    "short_days": 20,
+    "long_days": 60,
+    "short_weight": 0.5,
+    "long_weight": 0.5,
+    "ohlcv_count": 80
+  },
+  "filter": {
+    "require_above_ma60": true,
+    "require_positive_60d_return": true
+  },
+  "entry": {
+    "amount": 1000000,
+    "order_type": "market"
+  }
+}

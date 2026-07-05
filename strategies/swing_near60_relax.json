@@ -1,0 +1,38 @@
+{
+  "id": "swing_near60_relax",
+  "name": "스윙 고점 근접 전략 완화 (60일 고점 80~95%)",
+  "enabled": false,
+  "type": "swing",
+  "schedule": {
+    "entry_time": "09:03",
+    "monitor_interval_sec": 30
+  },
+  "universe": {
+    "min_market_cap_억": 3000,
+    "min_5d_avg_amount_억": 500,
+    "exclude_etf": true,
+    "exclude_managed": true
+  },
+  "screen": {
+    "high_days": 60,
+    "high_ratio_min": 0.80,
+    "high_ratio_max": 0.95,
+    "vol_ratio_today_vs_20d": 1.5,
+    "vol_ratio_5d_vs_20d": 1.2,
+    "vol_ratio_today_vs_prev5d": 1.0,
+    "require_foreign_net_buy_5d": true,
+    "require_inst_net_buy_5d": true
+  },
+  "entry": {
+    "require_above_open": true,
+    "amount_per_stock": 300000,
+    "order_type": "limit",
+    "unfilled_wait_sec": 30,
+    "max_stocks": 5
+  },
+  "exit": {
+    "take_profit": 10.0,
+    "stop_loss": -5.0,
+    "unfilled_wait_sec": 30
+  }
+}

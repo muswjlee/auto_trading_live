@@ -18,6 +18,7 @@ from engine.monitor import (
     reserve_or_skip, cancel_reservation, is_sl_blacklisted,
 )
 from engine.notifier import notify_buy, notify_no_signal, notify_error, notify_sell, send
+from engine.order_utils import limit_buy
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
@@ -105,60 +106,18 @@ def execute_entry(api: KISApi, strategy: dict, log, suppress_no_signal: bool = F
                 cancel_reservation(code, sid)
                 continue
 
-            last_err = None
-            bought = False
-            for attempt in range(3):
-                try:
-                    result = api.buy(code, qty, price=0)
-                    log.info(f"[매수] {name}({code}) {qty}주  주문번호={result.get('odno')}")
-                    time.sleep(0.5)
-                    actual_price = api.get_avg_buy_price(code)
-                    if actual_price > 0:
-                        log.info(f"[체결가] {name}({code}) 실제 평균매입가 {actual_price:,}원 (스크리닝가 {price:,}원)")
-                    else:
-                        actual_price = price
-                        log.warning(f"[체결가 조회 실패] {name}({code}) 스크리닝가 {price:,}원 사용")
-                    notify_buy(name, code, qty, actual_price, strategy["name"])
-                    add_position(code, name, actual_price, qty, strategy["id"],
-                                 stock.get("execution_strength", 0.0),
-                                 stock.get("change_rate", 0.0),
-                                 stock.get("vwap_ratio", 0.0))
-                    bought = True
-                    break
-                except Exception as e:
-                    last_err = e
-                    log.warning(f"[매수 재시도 {attempt+1}/3] {name}({code}): {e}")
-                    if attempt < 2:
-                        time.sleep(1.0 * (attempt + 1))
-                        # 500 에러라도 실제 체결됐을 수 있으므로 잔고 확인
-                        try:
-                            bal = api.get_balance()
-                            held = {s.get("pdno") for s in bal.get("stocks", [])}
-                            if code in held:
-                                log.info(f"[{name}] 500 에러지만 실제 체결 확인 → 재시도 취소, 포지션 등록")
-                                actual_price = api.get_avg_buy_price(code) or price
-                                notify_buy(name, code, qty, actual_price, strategy["name"])
-                                add_position(code, name, actual_price, qty, strategy["id"],
-                                             stock.get("execution_strength", 0.0),
-                                             stock.get("change_rate", 0.0),
-                                             stock.get("vwap_ratio", 0.0))
-                                bought = True
-                                break
-                        except Exception:
-                            pass
-                        # 재시도 전 체결강도 재확인 — 모멘텀 소진이면 매수 포기
-                        min_strength = strategy["entry"].get("min_execution_strength")
-                        instant = strategy["entry"].get("instant_execution_strength", False)
-                        if min_strength is not None and not bought:
-                            from engine.screener import get_execution_strength
-                            retry_strength = get_execution_strength(api, code, instant=instant)
-                            if retry_strength < min_strength:
-                                log.info(f"[매수 포기] {name}({code}) 재시도 중 체결강도 {retry_strength} < {min_strength} → 모멘텀 소진")
-                                cancel_reservation(code, sid)
-                                break
-            if not bought:
-                log.error(f"[매수 오류] {name}({code}): {last_err}")
-                notify_error(f"매수 실패 {name}({code}): {last_err}")
+            wait_sec     = strategy["entry"].get("unfilled_wait_sec", 30)
+            actual_price = limit_buy(api, code, name, qty, wait_sec)
+            if actual_price > 0:
+                log.info(f"[체결가] {name}({code}) 실제 평균매입가 {actual_price:,}원 (스크리닝가 {price:,}원)")
+                notify_buy(name, code, qty, actual_price, strategy["name"])
+                add_position(code, name, actual_price, qty, strategy["id"],
+                             stock.get("execution_strength", 0.0),
+                             stock.get("change_rate", 0.0),
+                             stock.get("vwap_ratio", 0.0))
+            else:
+                log.info(f"[매수 취소] {name}({code}) 지정가 미체결 → 포기")
+                notify_error(f"매수 취소(미체결) {name}({code})")
                 cancel_reservation(code, sid)
             time.sleep(0.3)
         except Exception as e:
@@ -201,16 +160,28 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
             log.warning(f"[미체결 조회 오류] {pos['name']}({code}): {e}")
 
         sold = False
-        already_sold_by_other = False  # 다른 프로세스가 먼저 매도 완료한 경우
+        already_sold_by_other = False
         last_err = None
+        order_no = ""
         for attempt in range(5):
             try:
                 price_info = api.get_price(code)
                 current    = int(price_info["stck_prpr"])
-                order_no   = ""
+
+                # bid_price_1 지정가 매도
+                bid1 = current
                 try:
-                    result   = api.sell(code, pos["qty"])
+                    ob = api.get_orderbook(code)
+                    b  = int(ob.get("bidp1", 0))
+                    if b > 0:
+                        bid1 = b
+                except Exception:
+                    pass
+
+                try:
+                    result   = api.sell(code, pos["qty"], price=bid1)
                     order_no = result.get("ODNO") or result.get("odno", "")
+                    log.info(f"[장마감 지정가 매도] {pos['name']}({code}) {pos['qty']}주 @ {bid1:,}원 주문번호={order_no}")
                     sold = True
                 except Exception as e:
                     if "잔고내역이 없습니다" in str(e):
@@ -219,19 +190,37 @@ def force_sell_strategy(api: KISApi, strategy: dict, log):
                         already_sold_by_other = True
                     else:
                         raise
+
+                # 미체결 확인: 3초 대기 후 시장가 fallback
+                if sold and order_no and not already_sold_by_other:
+                    time.sleep(3)
+                    try:
+                        pending = api.get_pending_orders()
+                        if any(p.get("odno") == order_no for p in pending):
+                            log.info(f"  미체결 → 시장가 강제 매도")
+                            try:
+                                api.cancel_order(order_no, code, pos["qty"])
+                                time.sleep(0.3)
+                            except Exception:
+                                pass
+                            r2       = api.sell(code, pos["qty"], price=0)
+                            order_no = r2.get("ODNO") or r2.get("odno", order_no)
+                            time.sleep(1.0)
+                    except Exception as pe:
+                        log.warning(f"  미체결 확인 오류: {pe}")
+
                 if sold:
                     try:
                         if not already_sold_by_other:
-                            # 실제 매도 체결가 조회
                             actual_sell_price = current
                             if order_no:
                                 time.sleep(0.5)
                                 fetched = api.get_sell_execution_price(order_no, code)
                                 if fetched > 0:
-                                    log.info(f"[매도 체결가] {pos['name']}({code}) 실제 체결가 {fetched:,}원 (트리거 시점 {current:,}원)")
+                                    log.info(f"[매도 체결가] {pos['name']}({code}) {fetched:,}원")
                                     actual_sell_price = fetched
                                 else:
-                                    log.warning(f"[매도 체결가 조회 실패] {pos['name']}({code}) 트리거 시점가 {current:,}원 사용")
+                                    log.warning(f"[매도 체결가 조회 실패] {pos['name']}({code}) {current:,}원 사용")
                             notify_sell(pos["name"], code, pos["qty"], pos["buy_price"], actual_sell_price, "장마감 강제매도", strategy["name"])
                             try:
                                 record_trade(pos["name"], code, pos["qty"], pos["buy_price"], actual_sell_price, "장마감 강제매도", sid,
@@ -415,8 +404,10 @@ def run(strategy_id: str):
                 if available_slots > 0:
                     log.info(f"=== [{sid}] 매수 시도 (연속진입, 빈 슬롯 {available_slots}/{max_stocks}) ===")
                     strategy["entry"]["max_stocks"] = available_slots
-                    execute_entry(api, strategy, log, suppress_no_signal=True)
-                    strategy["entry"]["max_stocks"] = max_stocks
+                    try:
+                        execute_entry(api, strategy, log, suppress_no_signal=True)
+                    finally:
+                        strategy["entry"]["max_stocks"] = max_stocks
         else:
             # 일반(0905/0910/0915): 진입 시간 도달 시 KODEX200 3분봉 확인 후 1회 매수
             if not entry_done and entry_t <= t < entry_t + 1:

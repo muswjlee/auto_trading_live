@@ -1,0 +1,36 @@
+{
+  "id": "swing_breakout",
+  "name": "스윙 돌파 전략 (60일 신고가)",
+  "enabled": false,
+  "type": "swing",
+  "schedule": {
+    "entry_time": "09:03",
+    "monitor_interval_sec": 30
+  },
+  "universe": {
+    "min_market_cap_억": 3000,
+    "min_5d_avg_amount_억": 1000,
+    "exclude_etf": true,
+    "exclude_managed": true
+  },
+  "screen": {
+    "high_days": 60,
+    "vol_ratio_today_vs_20d": 2.0,
+    "vol_ratio_5d_vs_20d": 1.5,
+    "vol_ratio_today_vs_prev5d": 1.2,
+    "require_foreign_net_buy_5d": true,
+    "require_inst_net_buy_5d": true
+  },
+  "entry": {
+    "require_above_open": true,
+    "amount_per_stock": 300000,
+    "order_type": "limit",
+    "unfilled_wait_sec": 30,
+    "max_stocks": 5
+  },
+  "exit": {
+    "take_profit": 10.0,
+    "stop_loss": -5.0,
+    "unfilled_wait_sec": 30
+  }
+}

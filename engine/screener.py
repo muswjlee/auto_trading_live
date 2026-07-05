@@ -1,10 +1,47 @@
 """종목 스크리닝 — 거래량 유니버스 또는 리서치 유니버스 지원"""
 
 import time
+import threading
 import logging
+from collections import deque
 from kis_api import KISApi
 from engine.indicators import rsi as calc_rsi, macd as calc_macd
 from engine.research import get_today_research
+
+# 누적 체결강도 히스토리 (종목코드 → deque[(timestamp, strength)])
+_exec_history: dict[str, deque] = {}
+_exec_history_lock = threading.Lock()
+_EXEC_HISTORY_TTL = 600  # 10분 이상 된 항목 자동 제거
+
+
+def _check_strength_trend(code: str, current: float, window_min: int, min_val: float) -> bool:
+    """누적 체결강도가 min_val 이상이고, 60초 전부터 10초 단위로 단조 증가했으면 True"""
+    now = time.time()
+    with _exec_history_lock:
+        if code not in _exec_history:
+            _exec_history[code] = deque()
+        hist = _exec_history[code]
+        hist.append((now, current))
+        cutoff = now - _EXEC_HISTORY_TTL
+        while hist and hist[0][0] < cutoff:
+            hist.popleft()
+
+        if current < min_val:
+            return False
+
+        # 60초 전부터 10초 단위 샘플 추출 후 단조 증가 확인
+        TOLERANCE = 5  # ±5초 이내 가장 가까운 값 사용
+        samples = []
+        for offset in range(60, 0, -10):  # 60, 50, 40, 30, 20, 10초 전
+            target_t = now - offset
+            near = [(abs(t - target_t), v) for t, v in hist if abs(t - target_t) <= TOLERANCE]
+            if not near:
+                return False  # 해당 구간 데이터 없으면 판정 불가
+            samples.append(min(near, key=lambda x: x[0])[1])
+        samples.append(current)
+
+        # 각 10초 구간이 이전 구간보다 높아야 함
+        return all(samples[i] > samples[i - 1] for i in range(1, len(samples)))
 
 log = logging.getLogger(__name__)
 
@@ -57,13 +94,18 @@ _ETF_PREFIXES = (
     "KODEX", "TIGER", "ARIRANG", "KBSTAR", "HANARO", "KOSEF",
     "KINDEX", "ACE", "SOL", "FOCUS", "SMART", "TIMEFOLIO",
     "TREX", "PLUS", "NEWTON", "RISE", "WOORI ETF", "KIWOOM",
+    "TIME", "UNICORN", "KOACT", "1Q",
 )
 
 def is_etn(name: str) -> bool:
     return "ETN" in name.upper()
 
+_ETF_KEYWORDS = ("레버리지", "선물", "액티브")
+
 def is_etf(name: str) -> bool:
-    return any(name.upper().startswith(p) for p in _ETF_PREFIXES)
+    upper = name.upper()
+    return (any(upper.startswith(p) for p in _ETF_PREFIXES)
+            or any(k in name for k in _ETF_KEYWORDS))
 
 def is_inverse(name: str) -> bool:
     return "인버스" in name
@@ -234,9 +276,14 @@ def screen(api: KISApi, strategy: dict) -> list[dict]:
                 return None
 
             min_acc_strength = entry.get("min_accumulated_execution_strength")
-            if min_acc_strength is not None:
+            trend_min = entry.get("exec_strength_trend_minutes")
+            if min_acc_strength is not None or trend_min is not None:
                 acc = strength if not instant_strength else api.get_execution_strength(s["code"])
-                if acc < min_acc_strength:
+                if trend_min is not None:
+                    if not _check_strength_trend(s["code"], acc, trend_min, min_acc_strength or 0):
+                        log.info(f"  {s['name']} 누적체결강도 {acc:.1f} — {trend_min}분 증가세 미충족 또는 {min_acc_strength}미만 → 제외")
+                        return None
+                elif acc < min_acc_strength:
                     log.info(f"  {s['name']} 누적 체결강도 {acc} < {min_acc_strength} → 제외")
                     return None
 

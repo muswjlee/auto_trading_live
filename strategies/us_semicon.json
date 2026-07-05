@@ -1,0 +1,55 @@
+{
+  "id": "us_semicon",
+  "name": "미국 반도체 선행지표 전략",
+  "enabled": false,
+  "type": "us_semicon",
+  "us_signal": {
+    "sox_threshold": 1.5,
+    "nvda_threshold": 2.0,
+    "smh_threshold": 1.5,
+    "min_conditions": 2
+  },
+  "candidates": [
+    {"code": "005930", "name": "삼성전자"},
+    {"code": "000660", "name": "SK하이닉스"},
+    {"code": "042700", "name": "한미반도체"},
+    {"code": "403870", "name": "HPSP"},
+    {"code": "058470", "name": "리노공업"},
+    {"code": "095340", "name": "ISC"},
+    {"code": "240810", "name": "원익IPS"},
+    {"code": "039030", "name": "이오테크닉스"},
+    {"code": "036930", "name": "주성엔지니어링"},
+    {"code": "140860", "name": "파크시스템스"},
+    {"code": "095610", "name": "테스"},
+    {"code": "067310", "name": "하나마이크론"},
+    {"code": "036540", "name": "SFA반도체"},
+    {"code": "000990", "name": "DB하이텍"}
+  ],
+  "prefilter": {
+    "min_turnover_billion": 200,
+    "require_above_ma20": true,
+    "volume_ratio_threshold": 1.2,
+    "require_positive_20d_return": true,
+    "ohlcv_days": 22
+  },
+  "realtime": {
+    "entry_time": "09:05",
+    "require_above_open": true,
+    "require_above_prev_close": true,
+    "max_gap_pct": 7.0
+  },
+  "score": {
+    "ret20_weight": 0.4,
+    "volume_score_weight": 0.3,
+    "intraday_score_weight": 0.3,
+    "top_n": 5
+  },
+  "entry": {
+    "qty_per_stock": 1,
+    "unfilled_wait_sec": 30
+  },
+  "exit": {
+    "force_exit_time": "15:20",
+    "market_order_time": "15:25"
+  }
+}

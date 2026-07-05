@@ -1,0 +1,32 @@
+{
+  "id": "ma_breakout_1430",
+  "name": "장기 이동평균 돌파 전략 (14:30)",
+  "enabled": false,
+  "type": "ma_breakout",
+  "schedule": {
+    "entry_time": "14:30",
+    "entry_end_time": "14:40",
+    "monitor_interval_sec": 60
+  },
+  "universe": {
+    "exclude_etf": true,
+    "exclude_managed": true,
+    "min_turnover_억": 1000,
+    "top_candidates": 500
+  },
+  "screen": {
+    "ma_days": [240, 480],
+    "volume_ratio_60d": 5.0,
+    "near_high_pct": 95.0
+  },
+  "entry": {
+    "max_stocks": 3,
+    "amount_per_stock": 1000000,
+    "unfilled_wait_sec": 30
+  },
+  "exit": {
+    "take_profit": 30.0,
+    "max_hold_trading_days": 30,
+    "unfilled_wait_sec": 30
+  }
+}

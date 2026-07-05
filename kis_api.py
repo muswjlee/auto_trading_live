@@ -130,6 +130,7 @@ class KISApi:
         seen_codes: set[str] = set()
         raw_all: list[dict]  = []
 
+        fail_count = 0
         for mkt in ["1", "2"]:                      # 코스피, 코스닥
             for band_min, band_max in bands:
                 try:
@@ -139,9 +140,19 @@ class KISApi:
                         if code and code not in seen_codes:
                             seen_codes.add(code)
                             raw_all.append(item)
-                except Exception:
-                    pass
+                except Exception as e:
+                    fail_count += 1
+                    import logging as _log
+                    _log.getLogger(__name__).warning(
+                        f"[거래대금 조회 실패] 시장={mkt} 가격대={band_min}~{band_max}: {e}"
+                    )
                 time.sleep(0.1)
+
+        if fail_count > 0:
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                f"[거래대금 조회] {fail_count}개 구간 실패, 수집된 종목: {len(raw_all)}개"
+            )
 
         raw_all.sort(key=lambda x: int(x.get("acml_tr_pbmn", 0)), reverse=True)
 
@@ -153,6 +164,7 @@ class KISApi:
                 "name":        item.get("hts_kor_isnm", ""),
                 "price":       int(item.get("stck_prpr", 0)),
                 "volume":      int(item.get("acml_vol", 0)),
+                "turnover":    int(item.get("acml_tr_pbmn", 0)),
                 "change":      int(item.get("prdy_vrss", 0)),
                 "change_rate": float(item.get("prdy_ctrt", 0)),
                 "high":        int(item.get("stck_hgpr", 0)),
@@ -204,6 +216,7 @@ class KISApi:
                 "name":        item.get("hts_kor_isnm", ""),
                 "price":       int(item.get("stck_prpr", 0)),
                 "volume":      int(item.get("acml_vol", 0)),
+                "turnover":    int(item.get("acml_tr_pbmn", 0)),
                 "change":      int(item.get("prdy_vrss", 0)),
                 "change_rate": float(item.get("prdy_ctrt", 0)),
                 "high":        int(item.get("stck_hgpr", 0)),
@@ -351,23 +364,65 @@ class KISApi:
         return 0.0
 
     def get_ohlcv(self, stock_code: str, period: str = "D", count: int = 30) -> list[dict]:
-        """일/주/월 OHLCV 조회 (period: D/W/M) — count만큼 확보하기 위해 시작일 자동 계산"""
-        # 주말·공휴일 감안해 count * 2 캘린더일 이전부터 조회
-        start = (datetime.now() - timedelta(days=count * 2)).strftime("%Y%m%d")
+        """일/주/월 OHLCV 조회 (period: D/W/M)
+        inquire-daily-itemchartprice 사용 — 1회 최대 100거래일 반환.
+        count > 100 시 다중 호출로 합산.
+        반환 필드: stck_bsop_date, stck_oprc, stck_hgpr, stck_lwpr, stck_clpr, acml_vol, acml_tr_pbmn
+        """
+        _BATCH = 100
+
+        def _fetch(start: str, end: str) -> list[dict]:
+            r = requests.get(
+                f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+                headers=self._headers("FHKST03010100"),
+                params={
+                    "FID_COND_MRKT_DIV_CODE": "J",
+                    "FID_INPUT_ISCD": stock_code,
+                    "FID_INPUT_DATE_1": start,
+                    "FID_INPUT_DATE_2": end,
+                    "FID_PERIOD_DIV_CODE": period,
+                    "FID_ORG_ADJ_PRC": "0",
+                },
+                timeout=_TIMEOUT,
+            )
+            r.raise_for_status()
+            return r.json().get("output2", [])
+
+        result: list[dict] = []
+        end_date = datetime.now().strftime("%Y%m%d")
+        while len(result) < count:
+            batch = min(_BATCH, count - len(result))
+            start_date = (datetime.strptime(end_date, "%Y%m%d") - timedelta(days=batch * 2)).strftime("%Y%m%d")
+            batch_data = _fetch(start_date, end_date)
+            if not batch_data:
+                break
+            result += batch_data[:batch]
+            if len(result) >= count:
+                break
+            oldest = result[-1].get("stck_bsop_date", "")
+            if not oldest:
+                break
+            end_date = (datetime.strptime(oldest, "%Y%m%d") - timedelta(days=1)).strftime("%Y%m%d")
+
+        return result[:count]
+
+    def get_investor_trend(self, stock_code: str, days: int = 5) -> list[dict]:
+        """투자자별 일별 순매수 조회 — 최근 N거래일 (외국인/기관)
+        반환 필드: frgn_ntby_qty, orgn_ntby_qty (양수=순매수, 음수=순매도)
+        """
+        start = (datetime.now() - timedelta(days=days * 3)).strftime("%Y%m%d")
         res = requests.get(
-            f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-price",
-            headers=self._headers("FHKST01010400"),
+            f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-investor",
+            headers=self._headers("FHKST01010900"),
             params={
                 "FID_COND_MRKT_DIV_CODE": "J",
                 "FID_INPUT_ISCD": stock_code,
-                "FID_PERIOD_DIV_CODE": period,
-                "FID_ORG_ADJ_PRC": "0",
                 "FID_INPUT_DATE_1": start,
             },
             timeout=_TIMEOUT,
         )
         res.raise_for_status()
-        return res.json()["output"][:count]
+        return res.json().get("output", [])[:days]
 
     def get_minute_candles(self, stock_code: str, count: int = 10) -> list[dict]:
         """1분봉 조회 — 최신순 반환 (output2)"""
@@ -528,6 +583,107 @@ class KISApi:
             for s in bal.get("stocks", []):
                 if s.get("pdno") == stock_code:
                     return int(float(s.get("pchs_avg_pric", 0)))
+        except Exception:
+            pass
+        return 0
+
+    def get_orderbook(self, stock_code: str) -> dict:
+        """호가 조회 — 최우선 매수/매도호가 반환
+        반환 키: askp1(매도호가1), bidp1(매수호가1)
+        """
+        res = requests.get(
+            f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn",
+            headers=self._headers("FHKST01010200"),
+            params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": stock_code},
+            timeout=_TIMEOUT,
+        )
+        res.raise_for_status()
+        return res.json().get("output1", {})
+
+    def modify_order(self, order_no: str, stock_code: str, qty: int, new_price: int) -> dict:
+        """주문 정정 (가격 변경)"""
+        tr_id = "VTTC0803U" if IS_PAPER else "TTTC0803U"
+        res = requests.post(
+            f"{BASE_URL}/uapi/domestic-stock/v1/trading/order-rvsecncl",
+            headers=self._headers(tr_id),
+            json={
+                "CANO": ACCOUNT_NO,
+                "ACNT_PRDT_CD": ACCOUNT_CD,
+                "KRX_FWDG_ORD_ORGNO": "",
+                "ORGN_ODNO": order_no,
+                "ORD_DVSN": "00",
+                "RVSE_CNCL_DVSN_CD": "01",
+                "ORD_QTY": str(qty),
+                "ORD_UNPR": str(new_price),
+                "PDNO": stock_code,
+                "QTY_ALL_ORD_YN": "Y",
+            },
+            timeout=_ORDER_TIMEOUT,
+        )
+        res.raise_for_status()
+        result = res.json()
+        if result.get("rt_cd") != "0":
+            raise RuntimeError(f"주문 정정 오류: {result.get('msg1')}")
+        return result["output"]
+
+    def get_overseas_ohlcv(self, excd: str, symb: str, count: int = 5) -> list[dict]:
+        """해외 주식/지수 일봉 조회 (최신순)
+        excd: NAS(나스닥), NYS(뉴욕), AMS(아멕스)
+        symb: 종목심볼 (예: NVDA, SMH, 0SOX)
+        반환 필드: xymd(날짜), open, high, low, clos(종가), tvol(거래량)
+        """
+        from datetime import date as _date
+        bymd = _date.today().strftime("%Y%m%d")
+        res = requests.get(
+            f"{BASE_URL}/uapi/overseas-price/v1/quotations/dailyprice",
+            headers=self._headers("HHDFS76240000"),
+            params={
+                "AUTH": "",
+                "EXCD": excd,
+                "SYMB": symb,
+                "GUBN": "0",
+                "BYMD": bymd,
+                "MODP": "0",
+                "KEYB": "",
+            },
+            timeout=_TIMEOUT,
+        )
+        res.raise_for_status()
+        output = res.json().get("output2", [])
+        return [r for r in output if r.get("xymd")][:count]
+
+    def get_buy_execution_price(self, order_no: str, stock_code: str) -> int:
+        """체결된 매수 주문의 실제 평균 체결가 조회 (주문번호 기반)"""
+        from datetime import date
+        today = date.today().strftime("%Y%m%d")
+        tr_id = "VTTC8001R" if IS_PAPER else "TTTC8001R"
+        try:
+            res = requests.get(
+                f"{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+                headers=self._headers(tr_id),
+                params={
+                    "CANO":            ACCOUNT_NO,
+                    "ACNT_PRDT_CD":    ACCOUNT_CD,
+                    "INQR_STRT_DT":    today,
+                    "INQR_END_DT":     today,
+                    "SLL_BUY_DVSN_CD": "02",
+                    "INQR_DVSN":       "00",
+                    "PDNO":            stock_code,
+                    "ORD_GNO_BRNO":    "",
+                    "ODNO":            order_no,
+                    "INQR_DVSN_3":     "00",
+                    "INQR_DVSN_1":     "",
+                    "CTX_AREA_FK100":  "",
+                    "CTX_AREA_NK100":  "",
+                },
+                timeout=_TIMEOUT,
+            )
+            res.raise_for_status()
+            for item in res.json().get("output1", []):
+                if item.get("odno") == order_no:
+                    avg = int(item.get("avg_prvs", 0))
+                    if avg > 0:
+                        return avg
         except Exception:
             pass
         return 0

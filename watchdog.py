@@ -24,7 +24,9 @@ _PID_FILE = os.path.join(_BASE, "watchdog.pid")
 
 CHECK_INTERVAL = 60   # 초
 START_HOUR     = 850  # 감시 시작 (08:50)
-END_HOUR       = 1535 # 감시 종료 (15:35, 결산 후)
+MARKET_END     = 1535 # 장 종료·runner 감시 종료 (15:35)
+SCREEN_HOUR    = 2100 # 스윙 야간 스크리닝 (21:00)
+EXIT_HOUR      = 2115 # 워치독 최종 종료 (21:15)
 
 
 def _setup_logger() -> logging.Logger:
@@ -53,6 +55,30 @@ def _load_enabled_strategies() -> list[str]:
         except Exception:
             pass
     return ids
+
+
+def _runner_script(strategy_id: str) -> str:
+    """전략 타입에 따라 실행할 runner 스크립트 결정"""
+    path = os.path.join(_BASE, "strategies", f"{strategy_id}.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            s = json.load(f)
+        stype = s.get("type")
+        if stype == "swing":
+            return "swing_runner.py"
+        if stype == "etf":
+            return "etf_runner.py"
+        if stype == "us_semicon":
+            return "us_semicon_runner.py"
+        if stype == "ma_breakout":
+            return "ma_breakout_runner.py"
+        if stype == "fi_buying":
+            return "fi_buying_runner.py"
+        if stype == "open_momentum":
+            return "open_momentum_runner.py"
+    except Exception:
+        pass
+    return "runner.py"
 
 
 def _start_process(label: str, args: list, log) -> subprocess.Popen:
@@ -118,6 +144,86 @@ def _send_daily_summary(log):
         log.error(f"[일일 요약 전송 실패] {e}")
 
 
+def _run_etf_screener(log):
+    """활성화된 etf 타입 전략의 스크리닝 실행 — schedule.screen_day가 오늘 요일과 일치할 때만"""
+    today_weekday = datetime.now().strftime("%A")  # "Saturday", "Monday", ...
+    for path in glob(os.path.join(_BASE, "strategies", "*.json")):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                s = json.load(f)
+            if not (s.get("enabled") and s.get("type") == "etf"):
+                continue
+            screen_day = s.get("schedule", {}).get("screen_day")
+            if not screen_day or today_weekday != screen_day:
+                continue
+            sid = s["id"]
+            log.info(f"[ETF 스크리닝] {sid} 시작 (오늘={today_weekday})")
+            proc = subprocess.run(
+                [_PYTHON, os.path.join(_BASE, "engine", "etf_screener.py")],
+                cwd=_BASE,
+                timeout=300,
+            )
+            log.info(f"[ETF 스크리닝] {sid} 완료 (exit={proc.returncode})")
+        except subprocess.TimeoutExpired:
+            log.error(f"[ETF 스크리닝] {sid} 5분 타임아웃 초과")
+            send(f"⚠️ <b>[워치독]</b> ETF 스크리닝 타임아웃")
+        except Exception as e:
+            log.error(f"[ETF 스크리닝] 오류: {e}")
+            send(f"⚠️ <b>[워치독]</b> ETF 스크리닝 오류: {e}")
+
+
+def _run_fi_buying_screener(log):
+    """활성화된 fi_buying 타입 전략의 야간 스크리닝 실행"""
+    for path in glob(os.path.join(_BASE, "strategies", "*.json")):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                s = json.load(f)
+            if not (s.get("enabled") and s.get("type") == "fi_buying"):
+                continue
+            sid = s["id"]
+            log.info(f"[FI 스크리닝] {sid} 시작")
+            proc = subprocess.run(
+                [_PYTHON, os.path.join(_BASE, "engine", "fi_buying_screener.py")],
+                cwd=_BASE,
+                timeout=600,
+            )
+            log.info(f"[FI 스크리닝] {sid} 완료 (exit={proc.returncode})")
+        except subprocess.TimeoutExpired:
+            log.error(f"[FI 스크리닝] {sid} 10분 타임아웃 초과")
+            send(f"⚠️ <b>[워치독]</b> FI 스크리닝 타임아웃")
+        except Exception as e:
+            log.error(f"[FI 스크리닝] 오류: {e}")
+            send(f"⚠️ <b>[워치독]</b> FI 스크리닝 오류: {e}")
+
+
+def _run_swing_screeners(log):
+    """활성화된 swing 타입 전략의 야간 스크리닝 실행 (blocking)"""
+    found = False
+    for path in glob(os.path.join(_BASE, "strategies", "*.json")):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                s = json.load(f)
+            if not (s.get("enabled") and s.get("type") == "swing"):
+                continue
+            sid = s["id"]
+            found = True
+            log.info(f"[스크리닝] {sid} 야간 스크리닝 시작")
+            proc = subprocess.run(
+                [_PYTHON, os.path.join(_BASE, "engine", "swing_screener.py"), sid],
+                cwd=_BASE,
+                timeout=600,
+            )
+            log.info(f"[스크리닝] {sid} 완료 (exit={proc.returncode})")
+        except subprocess.TimeoutExpired:
+            log.error(f"[스크리닝] {sid} 10분 타임아웃 초과")
+            send(f"⚠️ <b>[워치독]</b> {sid} 스크리닝 타임아웃")
+        except Exception as e:
+            log.error(f"[스크리닝] 오류: {e}")
+            send(f"⚠️ <b>[워치독]</b> 스크리닝 오류: {e}")
+    if not found:
+        log.info("[스크리닝] 활성화된 swing 전략 없음 — 생략")
+
+
 def run():
     log = _setup_logger()
 
@@ -136,13 +242,13 @@ def run():
     # 활성 전략 runner
     for sid in _load_enabled_strategies():
         targets[sid] = {
-            "args": [_PYTHON, os.path.join(_BASE, "engine", "runner.py"), sid],
+            "args": [_PYTHON, os.path.join(_BASE, "engine", _runner_script(sid)), sid],
             "proc": None,
         }
 
     # 초기 기동 (장 시간 내에서만)
     now_t = datetime.now().hour * 100 + datetime.now().minute
-    if START_HOUR <= now_t < END_HOUR:
+    if START_HOUR <= now_t < MARKET_END:
         for label, t in targets.items():
             t["proc"] = subprocess.Popen(t["args"], cwd=_BASE)
             log.info(f"[초기 기동] {label} PID={t['proc'].pid}")
@@ -150,12 +256,14 @@ def run():
     else:
         log.info("장 시간 외 — 초기 기동 생략, 감시만 대기")
 
-    last_heartbeat = 0  # 마지막 heartbeat 시각 (epoch)
+    last_heartbeat    = 0      # 마지막 heartbeat 시각 (epoch)
+    market_closed_done = False  # 15:35 결산 알림 1회 플래그
+    screener_done      = False  # 21:00 스크리닝 완료 플래그
 
     while True:
         time.sleep(CHECK_INTERVAL)
-        now      = datetime.now()
-        now_t    = now.hour * 100 + now.minute
+        now   = datetime.now()
+        now_t = now.hour * 100 + now.minute
 
         # heartbeat: 5분마다 생존 로그
         epoch = now.timestamp()
@@ -163,16 +271,36 @@ def run():
             log.info(f"[워치독 생존] 감시 중 — 전략 {list(targets.keys())}")
             last_heartbeat = epoch
 
-        # 장 종료 후 감시 종료
-        if now_t >= END_HOUR:
-            log.info("15:35 이후 — 워치독 종료")
-            send("🐕 <b>[워치독]</b> 오늘 감시 종료")
-            _send_daily_summary(log)
+        # ── 21:15 최종 종료 ───────────────────────────────────────────────
+        if now_t >= EXIT_HOUR:
+            log.info("21:15 이후 — 워치독 최종 종료")
             try:
                 os.remove(_PID_FILE)
             except OSError:
                 pass
             return
+
+        # ── 21:00 야간 스크리닝 (스윙 + ETF) ────────────────────────────
+        if SCREEN_HOUR <= now_t < EXIT_HOUR and not screener_done:
+            log.info("21:00 — 야간 스크리닝 시작 (스윙 + ETF + FI)")
+            _run_swing_screeners(log)
+            _run_etf_screener(log)
+            _run_fi_buying_screener(log)
+            screener_done = True
+            time.sleep(CHECK_INTERVAL)
+            continue
+
+        # ── 15:35 장 종료 처리 (1회) ─────────────────────────────────────
+        if now_t >= MARKET_END and not market_closed_done:
+            log.info("15:35 이후 — 장 종료, 21:00 스크리닝 대기")
+            send("🐕 <b>[워치독]</b> 오늘 감시 종료 — 21:00 스크리닝 대기 중")
+            _send_daily_summary(log)
+            market_closed_done = True
+
+        # ── 15:35~21:00 장외 시간: 긴 슬립 ──────────────────────────────
+        if now_t >= MARKET_END:
+            time.sleep(270)  # 4.5분 간격 (캐시 TTL 5분 이내 유지)
+            continue
 
         # 장 시작 전 대기
         if now_t < START_HOUR:
@@ -211,7 +339,7 @@ def run():
             for sid in enabled:
                 if sid not in targets:
                     targets[sid] = {
-                        "args": [_PYTHON, os.path.join(_BASE, "engine", "runner.py"), sid],
+                        "args": [_PYTHON, os.path.join(_BASE, "engine", _runner_script(sid)), sid],
                         "proc": None,
                     }
                     targets[sid]["proc"] = _start_process(sid, targets[sid]["args"], log)
