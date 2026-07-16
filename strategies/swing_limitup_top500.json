@@ -1,6 +1,6 @@
 {
-  "id": "swing_limitup",
-  "name": "스윙 상한가 전략",
+  "id": "swing_limitup_top500",
+  "name": "스윙 상한가 전략 (거래대금 상위500)",
   "enabled": true,
   "type": "swing",
   "schedule": {
@@ -8,7 +8,7 @@
     "monitor_interval_sec": 10
   },
   "universe": {
-    "scan_all": true,
+    "top_turnover": 500,
     "exclude_etf": true,
     "exclude_managed": true
   },

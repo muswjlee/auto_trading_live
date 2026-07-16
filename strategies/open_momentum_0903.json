@@ -19,13 +19,13 @@
   "entry": {
     "max_stocks": 3,
     "qty_per_stock": 1,
-    "reserve_cash": 4000000,
+    "reserve_cash": 6000000,
     "order_type": "market"
   },
   "exit": {
     "tp_pct": 1.0,
     "tp_pct_after_1h": 0.5,
-    "sl_pct": 3.0,
+    "sl_pct": 1.0,
     "force_exit_time": "15:20"
   }
 }
