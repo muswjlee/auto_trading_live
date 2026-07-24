@@ -18,7 +18,7 @@
   "entry": {
     "require_positive_open": true,
     "require_above_open": true,
-    "total_amount": 3000000,
+    "total_amount": 16000000,
     "order_type": "limit",
     "unfilled_wait_sec": 30,
     "max_stocks": 5

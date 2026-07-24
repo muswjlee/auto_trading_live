@@ -95,6 +95,14 @@ def _ensure_single_instance(log) -> bool:
             existing_pid = int(f.read().strip())
         import psutil
         if psutil.pid_exists(existing_pid) and existing_pid != os.getpid():
+            try:
+                p = psutil.Process(existing_pid)
+                cmdline = " ".join(p.cmdline())
+                if "watchdog" not in cmdline:
+                    log.warning(f"PID={existing_pid}은 watchdog 프로세스 아님 ({p.name()}) — stale PID 파일 무시")
+                    return False
+            except Exception:
+                return False
             log.warning(f"워치독 이미 실행 중 (PID={existing_pid}) → 중복 기동 종료")
             return True
     except Exception:

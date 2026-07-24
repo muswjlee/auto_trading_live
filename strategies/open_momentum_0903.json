@@ -1,7 +1,7 @@
 {
   "id": "open_momentum_0903",
   "name": "오전 거래량 모멘텀 (09:03)",
-  "enabled": true,
+  "enabled": false,
   "type": "open_momentum",
   "schedule": {
     "entry_slots": ["09:03", "09:10", "09:20", "09:30",
